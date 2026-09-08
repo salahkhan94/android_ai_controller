@@ -1,0 +1,128 @@
+Android AI Controller — project context and implementation plan
+Updated: 2026-09-08
+
+PURPOSE
+Build a Python AI application that observes and controls an Android emulator
+running Hinge through Appium/ADB, using an LLM and optionally vision.
+The user runs Ubuntu 26.04 and has installed Genymotion, Appium, and ADB.
+
+REQUESTED FEATURES
+1. Profile comments and likes (first priority):
+   - Read a profile's photos and written prompt responses.
+   - Select a particular photo or prompt response as the comment target.
+   - Generate a very funny, perhaps slightly flirtatious, relevant comment.
+   - Ultimately attach that comment to the selected item and send the like.
+   - Current requested deliverable: a plan for implementing prompt replies.
+2. Conversations (later):
+   - Open conversations with matches and detect new incoming messages.
+   - Generate replies using the whole conversation so far as context.
+   - Requires obtaining older messages, tracking observed history, and
+     distinguishing incoming messages from already handled messages.
+
+CURRENT IMPLEMENTATION / VERIFIED PROGRESS
+- Repository: /home/sal/projects/android_ai_controller
+- android_tester.py is the existing controller; it has not been modified.
+- It uses Appium's Python webdriver and UiAutomator2Options.
+- Device UDID: 127.0.0.1:6555
+- Appium endpoint: http://127.0.0.1:4723
+- Hinge package: co.hinge.app
+- no_reset=True preserves application data/login state.
+- Script opens a session, activates Hinge, waits five seconds, prints the
+  current package/activity and XML page source, then waits for user input.
+- driver.quit() runs in a finally block.
+- The user reports this script can already control the emulator.
+- The assistant inspected the script and README, but has not run the emulator
+  or captured actual Hinge screens/XML during this discussion.
+- No profile extraction, model integration, comment generation, or sending
+  implementation exists yet. No model/provider has been selected.
+- README.md currently contains only the project title.
+- This handoff file is the only change made for the current request.
+
+ARCHITECTURE DISCUSSED (RECOMMENDATIONS, NOT IMPLEMENTED)
+Observe -> identify screen/extract content -> propose structured action ->
+validate current state and target -> execute -> observe and verify result.
+- Use Appium as the primary UI control interface; ADB for device diagnostics
+  and management. Keep the currently working Genymotion environment.
+- Prefer UI-tree text, IDs, accessibility labels, and bounds when available.
+  Use screenshot/vision for photos and content absent from the UI tree.
+- Capture both sources close together and discard observations when the
+  screen changes; they are not an atomic snapshot.
+- Let the model select among extracted item IDs and propose text. Python
+  validates and executes a small supported action set, not arbitrary code.
+- Explicitly recognize profile, composer, and unexpected-screen states.
+- Re-observe after navigation; avoid stale element handles and coordinates.
+- Verify sends before any retry to prevent duplicate likes/comments.
+- Review-before-send was proposed, but the user has not yet specified their
+  preferred review policy versus unattended operation.
+- This is a planning request: it does not authorize sending messages or likes
+  during planning or initial read-only inspection.
+
+KNOWN PLATFORM CONSTRAINT
+Hinge states that third-party bots and automation software violate its terms
+and may result in account bans. This was already explained to the user.
+Human approval does not remove that platform restriction.
+Source: https://help.hinge.co/hc/en-us/articles/49657802257683-Note-on-Third-Party-Automated-Tools
+Appium driver reference: https://github.com/appium/appium-uiautomator2-driver
+
+PLAN: PROFILE PROMPT REPLIES FIRST
+Phase 1 — Inspect the actual UI (read-only).
+  Capture screenshot, XML, package/activity, and viewport dimensions from a
+  visible profile. Inspect written prompts and their associated like buttons.
+  Determine whether prompt titles, responses, and controls are exposed in XML.
+  Do not assume selectors or layout before collecting these observations.
+  Outcome: a documented extraction/control approach based on real UI evidence.
+
+Phase 2 — Extract structured profile items.
+  Introduce an observation/controller layer while keeping android_tester.py
+  available as the connection smoke test.
+  Represent each item with a local item ID, item type, prompt title, response
+  text, and locator/bounds evidence tied to its observation.
+  Use bounded scrolling and overlap deduplication if prompts span screens.
+  Distinguish items from different profiles; stop if identity/state is unclear.
+  Begin with written prompts; add photo crops and vision after this path works.
+  Outcome: a reliable list of candidate prompt targets from one profile.
+
+Phase 3 — Generate and select comments without sending.
+  Add a configurable model adapter; select provider/model when implementing.
+  Give the model extracted prompt content, target IDs, and user tone settings.
+  Request a few short, specific, funny, lightly flirtatious candidates and a
+  preferred target/candidate. Avoid generic lines and invented personal facts.
+  Treat profile text as untrusted content, not instructions to the agent.
+  Validate output structure, target membership, nonempty text, and the actual
+  app's comment length constraint once observed.
+  Display selected prompt and candidate comments for user review.
+  Outcome: useful grounded comments with no remote side effects.
+
+Phase 4 — Connect a selected draft to the correct composer.
+  Re-observe the same profile/item, open its like/comment composer, and confirm
+  that the composer corresponds to the selected prompt before entering text.
+  Make generation and submission separate operations; stop before submission
+  until the user's desired sending/review policy is established.
+  Outcome: the chosen draft is associated with the intended prompt reliably.
+
+Phase 5 — Submit and verify when authorized.
+  Recheck profile, target, and final text immediately before sending.
+  Record attempted/confirmed/uncertain submission states locally.
+  Verify the resulting UI; an ambiguous timeout must not trigger a blind retry.
+  Stop on unexpected dialogs, profile changes, or missing controls.
+  Outcome: one intended like/comment with evidence of success or clear uncertainty.
+
+Phase 6 — Add photo targets.
+  Extract photo regions and use vision to describe relevant visible details.
+  Generate comments grounded in those details and reuse the same target
+  validation, composer, and submission flow.
+
+VALIDATION
+- Use saved UI fixtures to check prompt extraction and target association.
+- Check that invalid model targets and malformed outputs are rejected.
+- Exercise stale-screen and ambiguous-send cases before enabling submission.
+- Run a read-only emulator smoke test, then draft generation, then an explicitly
+  authorized end-to-end send. Do not report live testing unless actually done.
+- Avoid committing private profile screenshots, message content, or API keys.
+
+NEXT STEP FOR A NEW CHAT
+Read this file and android_tester.py, then inspect repository instructions.
+The next implementation milestone is read-only profile capture and extraction,
+followed by generating comments for written prompts. Conversation automation
+and photo-based comments are later phases. No code beyond this handoff file
+has been added in the current turn.
