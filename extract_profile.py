@@ -1,4 +1,11 @@
-"""Scan the current profile into structured JSON and supporting XML evidence."""
+"""Command-line entry point for Phase 2 structured profile extraction.
+
+Connect to Appium, scan the current Hinge profile using the XML reader, and
+build prompt items with profile_items. Save profile.json and supporting XML
+under a unique capture directory, retaining incomplete reports on failure.
+Return to the top to check profile continuity. No LLM calls or sends occur;
+recorded controls must be resolved again before any future action.
+"""
 
 import argparse
 from datetime import datetime, timezone

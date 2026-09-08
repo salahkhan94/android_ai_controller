@@ -1,4 +1,10 @@
-"""Read-only observations, independent of model and action execution code."""
+"""Collect and save read-only Android UI observations for later inspection.
+
+Read app state and XML before and after a screenshot, flag changes, and save
+the evidence in a unique capture directory. Also index XML nodes with parent
+relationships and create a readable text/control inventory. This reusable
+module does not classify prompts, call an LLM, or execute UI actions.
+"""
 
 from datetime import datetime, timezone
 import json
@@ -75,4 +81,3 @@ def capture_observation(driver, output_root, expected_package):
     # Written last: its presence indicates all artifact writes completed.
     (folder / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return folder, metadata
-

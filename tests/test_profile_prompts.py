@@ -1,3 +1,10 @@
+"""Test XML prompt parsing and profile traversal with a simulated driver.
+
+Cover response preservation, deduplication, unexpected formats, bounded
+scrolling, profile changes, return-to-top continuity, and viewport-only mode.
+Simulated swipes and mocked waits keep these tests independent of an emulator.
+"""
+
 import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET

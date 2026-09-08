@@ -1,3 +1,10 @@
+"""Test observation capture with a simulated driver and temporary output files.
+
+Verify screenshot/XML preservation, node parent relationships, detection of
+changing UI hierarchies, and rejection of the wrong foreground application.
+These tests do not connect to Appium or require an emulator.
+"""
+
 import base64
 import json
 from pathlib import Path

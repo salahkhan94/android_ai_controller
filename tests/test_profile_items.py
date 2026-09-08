@@ -1,3 +1,10 @@
+"""Test structured prompt extraction using synthetic XML card layouts.
+
+Check card-scoped like-button association, missing/disabled/ambiguous controls,
+observation references, and inventory deduplication. Ensure unrelated buttons
+are not borrowed from the surrounding page. No emulator is required.
+"""
+
 import unittest
 import xml.etree.ElementTree as ET
 

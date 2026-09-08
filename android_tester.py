@@ -1,3 +1,10 @@
+"""Smoke-test the Appium connection to the Android emulator.
+
+Launch Hinge while preserving its login data, wait for it to open, and print
+the current package, activity, and XML UI hierarchy. Keep the session open
+until Enter is pressed, then disconnect. No likes or messages are sent.
+"""
+
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
 import time

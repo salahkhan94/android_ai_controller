@@ -1,4 +1,10 @@
-"""Capture the current Hinge screen without taps, typing, or scrolling."""
+"""Command-line entry point for capturing the current Hinge screen.
+
+Connect to the emulator through Appium, wait for the user to position a profile
+(unless --now is supplied), and call observation.capture_observation to save
+the screenshot, XML, and metadata. Report capture consistency and disconnect.
+This script does not launch Hinge, tap, type, scroll, or send anything.
+"""
 
 import argparse
 import sys

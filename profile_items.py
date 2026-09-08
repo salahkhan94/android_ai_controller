@@ -1,4 +1,11 @@
-"""Structured, observation-scoped prompt evidence. No device actions or LLM calls."""
+"""Convert profile XML into structured written-prompt items and control evidence.
+
+Extract titles and responses, associate Like prompt buttons within matching
+card containers, and record bounds, node references, and control state. Mark
+missing or ambiguous controls explicitly. ProfileInventory merges repeated
+prompt text while retaining its observation history and scan-local item ID.
+This module does not connect to Android or act on the recorded controls.
+"""
 
 import re
 import xml.etree.ElementTree as ET

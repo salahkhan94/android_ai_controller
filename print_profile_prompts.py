@@ -1,4 +1,11 @@
-"""Print written prompts from the current Hinge profile using XML only."""
+"""Print the current Hinge profile's written prompt titles and responses.
+
+Parse the English prompt accessibility descriptions in Appium's XML, scroll
+from top to bottom, and deduplicate repeated text across viewports. Support
+reading only the current viewport, bounded scrolling, observation callbacks,
+and an optional return-to-top continuity check used by extract_profile.py.
+No screenshots, LLM calls, likes, or messages are produced.
+"""
 
 import argparse
 from dataclasses import dataclass
