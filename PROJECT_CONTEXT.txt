@@ -12,7 +12,7 @@ REQUESTED FEATURES
    - Select a particular photo or prompt response as the comment target.
    - Generate a very funny, perhaps slightly flirtatious, relevant comment.
    - Ultimately attach that comment to the selected item and send the like.
-   - Current requested deliverable: a plan for implementing prompt replies.
+   - Current requested deliverable: Phase 2 structured written-prompt extraction.
 2. Conversations (later):
    - Open conversations with matches and detect new incoming messages.
    - Generate replies using the whole conversation so far as context.
@@ -31,12 +31,33 @@ CURRENT IMPLEMENTATION / VERIFIED PROGRESS
   current package/activity and XML page source, then waits for user input.
 - driver.quit() runs in a finally block.
 - The user reports this script can already control the emulator.
-- The assistant inspected the script and README, but has not run the emulator
-  or captured actual Hinge screens/XML during this discussion.
-- No profile extraction, model integration, comment generation, or sending
-  implementation exists yet. No model/provider has been selected.
-- README.md currently contains only the project title.
-- This handoff file is the only change made for the current request.
+- The assistant inspected the original script and then ran live Phase 1 captures;
+  see the live inspection findings below.
+- XML-only written prompt reading now exists in print_profile_prompts.py.
+  No model integration, comment generation, or sending exists yet.
+- Phase 1 capture tooling now exists: capture_profile.py (CLI) and observation.py
+  (reusable observation layer). Original android_tester.py is unchanged.
+- Saves screenshot, before/after XML, package/activity, window and image sizes,
+  timestamps, consistency flags, raw node inventory with parent relationships,
+  and a readable inspection inventory in unique Git-ignored captures/ folders.
+- Does not launch the app or navigate; user positions profile manually. Rejects
+  the wrong foreground package. Changed observations return CLI exit code 2.
+- README documents setup, capture, artifact inspection, and tests.
+- Three simulated-driver tests pass: evidence preservation/parent relationships,
+  changing XML detection, and rejection of wrong foreground application.
+- Live diagnostics confirmed Appium 3.7.0 ready and 127.0.0.1:6555 connected.
+- Live inspection now completed with user authorization: installed
+  Appium-Python-Client 5.3.1 into .venv and captured three stable observations.
+- Inspected photos, a partial prompt, and a full prompt on the same profile.
+  Two vertical gestures were used; no like/skip/send controls were activated.
+- Prompt title and answer are combined in content-desc, not text. The associated
+  button is labeled Like prompt and shares a card container with that description.
+- Photo buttons are labeled Like photo; repeated labels require card-scoped lookup.
+- A partial prompt exposed full text before its button became visible: extraction
+  and action readiness must be separate. No resource IDs on inspected item controls.
+- See LIVE_UI_FINDINGS.md for local evidence paths and Phase 2 extraction approach.
+- Phase 1 is complete for the inspected profile/prompt; other layouts and composer
+  behavior remain unverified. No model integration or sending exists.
 
 ARCHITECTURE DISCUSSED (RECOMMENDATIONS, NOT IMPLEMENTED)
 Observe -> identify screen/extract content -> propose structured action ->
@@ -54,8 +75,7 @@ validate current state and target -> execute -> observe and verify result.
 - Verify sends before any retry to prevent duplicate likes/comments.
 - Review-before-send was proposed, but the user has not yet specified their
   preferred review policy versus unattended operation.
-- This is a planning request: it does not authorize sending messages or likes
-  during planning or initial read-only inspection.
+- Current scope is Phase 2 extraction and read-only scrolling; no sending is authorized.
 
 KNOWN PLATFORM CONSTRAINT
 Hinge states that third-party bots and automation software violate its terms
@@ -122,7 +142,51 @@ VALIDATION
 
 NEXT STEP FOR A NEW CHAT
 Read this file and android_tester.py, then inspect repository instructions.
-The next implementation milestone is read-only profile capture and extraction,
-followed by generating comments for written prompts. Conversation automation
-and photo-based comments are later phases. No code beyond this handoff file
-has been added in the current turn.
+Read LIVE_UI_FINDINGS.md and the referenced local captures, if still available.
+Phase 2 structured written-prompt extraction now exists (see latest progress below).
+Next is Phase 3 configurable LLM draft generation from structured prompt items.
+Conversation automation and photo comments remain later phases; no LLM or sending
+logic exists yet.
+
+XML-ONLY PROMPT READER (latest progress)
+- Added print_profile_prompts.py: prints distinct prompt titles/responses from
+  the current Discover profile. Run .venv/bin/python print_profile_prompts.py.
+- Scrolls to the top, then down with overlapping swipes. No screenshots, likes,
+  skips, typing, or sends. --visible-only reads current XML without scrolling.
+- Live verification succeeded: printed three written prompts and their responses.
+- mobile: scrollGesture prematurely reported a boundary in this Compose UI;
+  reader instead uses slow swipeGesture and compares app XML content/bounds.
+- Two unchanged swipes indicate an apparent boundary; 30 gestures per direction
+  is the default cap. Stalls can mimic boundaries, so completeness is heuristic.
+- Stops for changed/missing Skip label, but same-name profiles cannot be reliably
+  distinguished by that label. User should leave emulator untouched during scan.
+- Nine tests pass overall, including six new parser/traversal tests.
+- Phase 2 card/control association is now implemented (see below). Unique
+  profile identity remains unavailable from the inspected XML.
+
+PHASE 2 IMPLEMENTATION
+- profile_items.py: reusable structured extractor and inventory. Written prompt
+  items have scan-local IDs, title/response, and observation histories.
+- Associates Like prompt only inside equal-bounds card ancestors with one prompt
+  and one matching button; never borrows a button from a neighbouring card.
+- Evidence includes raw description, node/card references, card/control bounds,
+  accessibility label, resource ID if present, and enabled/displayed/clickable state.
+- Explicit statuses: control_not_exposed, ambiguous, control_not_ready, or
+  control_visible_in_observation. All evidence requires fresh resolution for actions.
+- extract_profile.py: scans XML, saves each observation and profile.json under
+  Git-ignored captures/profile_<id>/. Uses existing reader traversal callback.
+- Returns to the top and compares textual/accessibility content to the initial top,
+  in addition to checking Skip label during traversal. These are continuity evidence,
+  not a unique profile identifier. Transient/same-content switches remain possible.
+- Unknown card layouts may be unassociated. XML cannot prove lack of occlusion.
+- Scroll boundaries remain heuristic; failures retain an incomplete report.
+- 17 tests pass, including ambiguity, missing/disabled controls, deduplication,
+  and same-name changed top content. Saved real partial/full captures also verified.
+- Initial Phase 2 live scan extracted three items and associated all three controls,
+  but correctly retained an incomplete report after an overly broad top-content
+  comparison included collapsible filter controls. Comparison now excludes those
+  controls; a regression test covers this case.
+- Final Phase 2 live verification succeeded: three written prompt items, all with
+  an observed associated like control; return-to-top continuity check passed.
+- Successful report: captures/profile_d520443961b149cf9e7149fa4cd762d1/profile.json.
+  Supporting XML references validated. Emulator left at profile top; nothing sent.
