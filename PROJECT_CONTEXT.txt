@@ -303,6 +303,25 @@ SCOPE DECISION — TEXT PROMPTS ONLY
 - Earlier photo-related inspection findings are historical observations only,
   not requirements or planned work. No executable code changed for this decision.
 
+CURRENT RUNNER: SUCCESSIVE PROFILES WITH PER-COMMENT APPROVAL
+- User requested continuing profile after profile until likes run out. run.py
+  now loops by default; existing mandatory approval remains for every comment.
+  Enter/EOF at approval cancels the entire session. --max-profiles N optionally
+  caps the session; --max-profiles 1 restores one-profile behavior.
+- Continue on confirmed_by_ui or uncertain_profile_advanced only. Advancement
+  remains unconfirmed delivery, never permission to retry the old target. Fresh
+  next-profile label must differ before scanning/generation. Same-name adjacent
+  profiles conservatively stop. Other uncertain outcomes and all errors stop.
+- Explicit English quota notices are detected before scanning and after sending.
+  Never infer likes remaining from a zero Rose count or subscription upsell.
+  Quota vocabulary is synthetically tested, not yet validated against a live
+  exhausted-likes screen. Unknown quota UI safely stops on existing checks.
+- Each profile retains its run.json, approval, and durable send ledger. The
+  device lock covers the entire loop. No unattended approval bypass was added.
+- 62 tests pass, covering continuation, quota, cancellation, max count, same
+  profile guard, and uncertain stop. CLI help verified. No live likes sent for
+  this implementation. This supersedes historical one-profile runner notes.
+
 FOLLOW-UP: LONG PROMPT HIDES COMPOSER BELOW VIEWPORT
 - Kat preparation_90bc9fe1212d432bb8ede934ff0896e8 stopped before typing.
   Failure screenshot shows the exact selected long prompt and suggestion chips,

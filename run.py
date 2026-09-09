@@ -1,10 +1,10 @@
-"""Run one text-profile workflow with mandatory approval before sending.
+"""Run successive text-profile workflows with approval before each send.
 
 Scan the currently open Hinge profile, generate three comment drafts, and show
 the recommended target and exact comment. The user may choose another candidate
 or cancel. Only explicit approval proceeds to fresh profile verification,
 composer preparation, and one submission transaction. Save an audit trail and
-stop after this profile; never retry an uncertain send or run unattended.
+continue when a different profile appears. Never retry a previous send.
 """
 
 import argparse
@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import sys
 import uuid
+import xml.etree.ElementTree as ET
 
 from comment_drafts import DEFAULT_TONE
 from extract_profile import scan_profile
@@ -23,7 +24,7 @@ from generate_comments import run as generate_drafts
 from llm_client import load_project_env
 from prepare_comment import SEND_LABELS, load_selection, prepare
 from print_profile_prompts import read_profile
-from submit_comment import attempt_key, submit
+from submit_comment import attempt_key, likes_exhausted, submit
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -70,7 +71,7 @@ def ask_approval(drafts_path, ask=input):
 
 
 def pipeline(connect, *, model, output_root=PROJECT_ROOT / "captures", max_scrolls=30,
-             tone=DEFAULT_TONE, max_chars=180, about_me="", ask=input):
+             tone=DEFAULT_TONE, max_chars=180, about_me="", ask=input, previous_label=None):
     output_root = Path(output_root).resolve()
     run_dir = output_root / ("run_" + uuid.uuid4().hex)
     run_dir.mkdir(parents=True, mode=0o700)
@@ -79,7 +80,15 @@ def pipeline(connect, *, model, output_root=PROJECT_ROOT / "captures", max_scrol
         print("Scanning the current profile. Keep the emulator untouched while it scrolls.", flush=True)
         driver = connect()
         try:
-            root, _ = read_profile(driver)
+            if driver.current_package == 'co.hinge.app' and likes_exhausted(ET.fromstring(driver.page_source)):
+                record['status'] = 'likes_exhausted'
+                print('Hinge reports no likes remaining. Stopping.')
+                return record
+            root, label = read_profile(driver)
+            if previous_label is not None and label == previous_label:
+                record['status'] = 'stopped_profile_not_advanced'
+                print('The previous profile is still visible. Stopping without another attempt.')
+                return record
             if any(n.get("content-desc") == "Edit comment" or n.get("content-desc") in SEND_LABELS
                    for n in root.iter()):
                 raise RuntimeError("A comment composer is already open. Close it manually before starting run.py.")
@@ -121,6 +130,10 @@ def pipeline(connect, *, model, output_root=PROJECT_ROOT / "captures", max_scrol
             record["status"] = submitted["status"]
             if record["status"] == "confirmed_by_ui":
                 print("Hinge displayed a success confirmation.")
+            elif record['status'] == 'likes_exhausted':
+                print('Hinge reports no likes remaining. Stopping.')
+            elif record['status'] == 'uncertain_profile_advanced':
+                print('Hinge advanced to another profile. Delivery is unconfirmed; the previous target will not be retried.')
             else:
                 print("Submission outcome is uncertain. Do not retry; inspect the saved evidence.")
             return record
@@ -138,6 +151,26 @@ def pipeline(connect, *, model, output_root=PROJECT_ROOT / "captures", max_scrol
         print(f"Run record: {run_dir / 'run.json'}")
 
 
+def run_profiles(connect, *, max_profiles=None, **kwargs):
+    """Continue only after a send and fresh profile identity verification.
+
+    Profile advancement permits navigating onward but is not delivery proof.
+    Every iteration retains its own approval and durable send-attempt ledger.
+    """
+    previous_label = None
+    count = 0
+    while True:
+        print(f'\nProfile {count + 1}: approval is required before sending.', flush=True)
+        result = pipeline(connect, previous_label=previous_label, **kwargs)
+        count += 1
+        if result['status'] not in {'confirmed_by_ui', 'uncertain_profile_advanced'}:
+            return result
+        if max_profiles is not None and count >= max_profiles:
+            return result
+        previous_label = result['approval']['profile_label']
+        print('Continuing to the next profile. Enter at approval cancels the session.', flush=True)
+
+
 def main():
     load_project_env()
     parser = argparse.ArgumentParser(description=__doc__)
@@ -148,7 +181,10 @@ def main():
     parser.add_argument("--tone", default=DEFAULT_TONE)
     parser.add_argument("--max-chars", type=int, default=180)
     parser.add_argument("--about-me", type=Path)
+    parser.add_argument('--max-profiles', type=int, help='Stop after this many profiles; default continues until likes run out or you cancel')
     args = parser.parse_args()
+    if args.max_profiles is not None and args.max_profiles < 1:
+        parser.error('--max-profiles must be positive')
     if args.max_scrolls < 2 or not 40 <= args.max_chars <= 1000:
         parser.error("Use --max-scrolls >= 2 and --max-chars between 40 and 1000.")
     if not os.environ.get("OPENAI_API_KEY"):
@@ -174,10 +210,10 @@ def main():
 
         try:
             about_me = args.about_me.read_text(encoding="utf-8") if args.about_me else ""
-            result = pipeline(connect, model=args.model, output_root=output_root,
+            result = run_profiles(connect, max_profiles=args.max_profiles, model=args.model, output_root=output_root,
                               max_scrolls=args.max_scrolls, tone=args.tone,
                               max_chars=args.max_chars, about_me=about_me)
-            return 0 if result["status"] in {"confirmed_by_ui", "cancelled_without_sending"} else 2
+            return 0 if result["status"] in {"confirmed_by_ui", "cancelled_without_sending", "likes_exhausted"} else 2
         except (KeyboardInterrupt, EOFError):
             print("Stopped. If submission had started, inspect its ledger before retrying.")
             return 1

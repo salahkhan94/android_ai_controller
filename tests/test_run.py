@@ -103,3 +103,51 @@ class RunnerTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'does not match approval'):
                     pipeline(Mock(return_value=Mock()), model='test', output_root=tmp, ask=lambda _: 'SEND')
                 submit.assert_not_called()
+
+class ProfileLoopTests(unittest.TestCase):
+    def test_advancement_continues_with_identity_guard_until_exhausted(self):
+        from run import run_profiles
+        outcomes = [
+            {'status': 'uncertain_profile_advanced', 'approval': {'profile_label': 'Skip A'}},
+            {'status': 'confirmed_by_ui', 'approval': {'profile_label': 'Skip B'}},
+            {'status': 'likes_exhausted'}]
+        with patch('run.pipeline', side_effect=outcomes) as one, redirect_stdout(io.StringIO()):
+            self.assertEqual(run_profiles(Mock(), model='test')['status'], 'likes_exhausted')
+        self.assertEqual([c.kwargs['previous_label'] for c in one.call_args_list], [None, 'Skip A', 'Skip B'])
+
+    def test_cancellation_uncertain_outcome_and_limit_stop_loop(self):
+        from run import run_profiles
+        for status in ['cancelled_without_sending', 'uncertain_after_attempt', 'stopped_profile_not_advanced']:
+            with patch('run.pipeline', return_value={'status': status}) as one, redirect_stdout(io.StringIO()):
+                self.assertEqual(run_profiles(Mock(), model='test')['status'], status)
+                one.assert_called_once()
+        with patch('run.pipeline', return_value={'status': 'uncertain_profile_advanced'}) as one, redirect_stdout(io.StringIO()):
+            run_profiles(Mock(), model='test', max_profiles=1)
+            one.assert_called_once()
+
+    def test_previous_profile_blocks_before_scan_and_generation(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()), \
+                patch('run.read_profile', return_value=(ET.fromstring('<hierarchy/>'), 'Skip A')), \
+                patch('run.scan_profile') as scan, patch('run.generate_drafts') as generate:
+            driver = Mock()
+            result = pipeline(Mock(return_value=driver), model='test', output_root=tmp, previous_label='Skip A')
+            self.assertEqual(result['status'], 'stopped_profile_not_advanced')
+            scan.assert_not_called()
+            generate.assert_not_called()
+            driver.quit.assert_called_once()
+
+    def test_quota_notice_stops_before_scan(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()), \
+                patch('run.scan_profile') as scan:
+            driver = Mock(current_package='co.hinge.app', page_source='<hierarchy><node text="You’re out of Likes!"/></hierarchy>')
+            result = pipeline(Mock(return_value=driver), model='test', output_root=tmp)
+            self.assertEqual(result['status'], 'likes_exhausted')
+            scan.assert_not_called()
+            driver.quit.assert_called_once()
+
+    def test_rose_zero_and_upsell_are_not_like_exhaustion(self):
+        from submit_comment import likes_exhausted, outcome
+        root = ET.fromstring('<hierarchy><node text="0"/><node text="Send a Rose instead?"/><node text="Get unlimited Likes"/></hierarchy>')
+        self.assertFalse(likes_exhausted(root))
+        root = ET.fromstring('<hierarchy><node text="You’ve used all your Likes for today"/></hierarchy>')
+        self.assertEqual(outcome(root, 'Skip A'), 'likes_exhausted')

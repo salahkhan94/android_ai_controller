@@ -24,7 +24,7 @@ Your API key is loaded from the project `.env`. The runner:
    (or `yes`) to approve the displayed option. Enter, `no`, or EOF cancels.
 4. Reconnects to the emulator, rechecks the profile, prepares the approved text,
    verifies it, and attempts one standard like/comment submission.
-5. Records the outcome and stops. An uncertain outcome is never automatically retried.
+5. Records the outcome and continues when Hinge advances to another profile. The previous target is never retried.
 
 Generated comments must not contain em dashes. The generation instructions forbid
 them and validation rejects any draft set that still contains one. Older drafts
@@ -47,7 +47,13 @@ emulator untouched while scanning, preparing, and sending. Only one `run.py` pro
 can use a device at a time; do not operate separate controller scripts concurrently.
 
 The runner closes its Appium session while you review, so you can take your time.
-It handles one profile per invocation, with no unattended or bulk-send mode.
+It continues across profiles with approval for each comment. Enter at approval ends
+the session. Use `--max-profiles 1` for a single profile or another positive limit.
+It stops on an explicit out-of-likes notice, an error, a non-advancing profile, or
+an uncertain outcome without profile advancement. Advancement is not delivery
+confirmation. No purchases, Roses, or automatic quota resets are attempted.
+Quota wording detection covers explicit English notices and has synthetic tests;
+the actual exhausted-likes screen has not yet been verified live.
 All artifacts and the shared duplicate-send ledger live under the project's
 `captures/`, even when launched from a different working directory. Each invocation
 adds a `run_<id>/run.json` with its approval and links to phase artifacts.

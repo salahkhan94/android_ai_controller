@@ -114,7 +114,19 @@ def save_record(path, record):
     temp.replace(path)
 
 
+def likes_exhausted(root):
+    """Recognize explicit English quota notices, never infer from a Rose count."""
+    notices = {"you're out of likes", "you are out of likes", "no more likes today",
+               "you've used all your likes for today", "you've reached your daily like limit",
+               "you've reached your daily limit of likes"}
+    values = {" ".join(n.get(key, '').replace('\u2019', "'").lower().strip(' .!').split())
+              for n in root.iter() for key in ('text', 'content-desc')}
+    return bool(values & notices)
+
+
 def outcome(root, label):
+    if likes_exhausted(root):
+        return "likes_exhausted"
     values = {n.get("text", "").strip() for n in root.iter()} | {
         n.get("content-desc", "").strip() for n in root.iter()}
     if {"Send a Rose instead?", "Send Like anyway"} <= values:
@@ -182,7 +194,7 @@ def submit(driver, receipt_path, send=False, output_root="captures"):
                 record["status"] = "confirmation_attempted_outcome_unknown"
                 save_record(attempt_path, record)
                 driver.execute_script("mobile: clickGesture", {"elementId": options[0].id})
-            if record["status"] in {"confirmed_by_ui", "uncertain_profile_advanced"}:
+            if record["status"] in {"confirmed_by_ui", "uncertain_profile_advanced", "likes_exhausted"}:
                 break
             time.sleep(.5)
         after, _ = capture_observation(driver, ledger, "co.hinge.app")
