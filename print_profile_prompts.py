@@ -94,8 +94,12 @@ def collect_prompts(driver, max_scrolls=30, visible_only=False, on_observation=N
     def content_signature(tree):
         # Compare profile content, not collapsible filter/navigation controls.
         # The English accessibility format is the same one used by extraction.
+        # Observed transient Hinge banner, not profile-authored content. Match
+        # the exact current-name sentence; do not discard arbitrary text nodes.
+        transient_banner = label.removeprefix("Skip ") + " shows thoughtful signals"
         return tuple((n.get("text", ""), n.get("content-desc", "")) for n in tree.iter()
                      if n.get("package") == "co.hinge.app"
+                     and n.get("text", "") != transient_banner
                      and (n.get("text")
                           or n.get("content-desc", "").startswith(("Prompt: ", "Skip "))
                           or n.get("content-desc", "").endswith("'s photo")))
@@ -119,6 +123,8 @@ def collect_prompts(driver, max_scrolls=30, visible_only=False, on_observation=N
                     top, moved = scroll("up")
                     stationary = 0 if moved else stationary + 1
                     if stationary >= 2:
+                        if on_observation:
+                            on_observation(top)
                         if content_signature(top) != initial_signature:
                             raise RuntimeError("Profile top content changed; scan identity is uncertain.")
                         break

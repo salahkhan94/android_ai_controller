@@ -56,9 +56,42 @@ written prompt visible. Profile text and photos are not reproduced in this repor
 5. Use bounded scrolling with overlapping content for discovery and deduplication.
    Do not use display name alone as a profile identity. Establish stronger continuity
    checks before combining content across observations.
-6. Use vision for photo meaning and as fallback for missing accessibility text.
-   This inspected written prompt does not need OCR.
+6. Extract written prompt content from XML. Photo interpretation and photo-targeted
+   comments are out of scope following the user's cancellation of Phase 6.
+   Earlier photo observations in this report are historical evidence only.
 
 Only one profile and one written prompt were inspected. Other prompt types,
 locales, and layouts remain unverified. Composer behavior, comment limits,
 submission, and confirmation were intentionally not tested in Phase 1.
+
+## Phase 4 composer inspection — 2026-09-09
+
+- A prompt like button opens an inline composer around that prompt, without
+  immediately sending the like. The prompt's exact accessibility description
+  remains available in a shared ancestor with the `Edit comment` view.
+- The send control is labeled `Send like` while empty and `Send like with message`
+  after text entry. A separate rose control is also exposed. Neither was activated.
+- The field is a generic `android.view.View`; the text is visible in screenshots
+  but absent from XML. `send_keys` failed on this view; `mobile: type` did not
+  populate it in the tested configuration. Native focus plus clipboard paste worked.
+- Ctrl+A/Ctrl+C read-back matched the selected draft exactly. Clipboard contents
+  were restored afterward. This supports text verification without OCR.
+- Initial composer evidence: `captures/20260909T011934_587491Z_8caad0bf`.
+- Successful final CLI test: `captures/preparation_bca384a0059940e983bf867c8ecb4eb5/`.
+  Its preparation.json references the final screenshot and XML captures.
+- Candidate c3 from the saved Phase 3 draft was left entered and unsent. The model
+  recommendation was used for this test; it was not approved for submission.
+# Keyboard/focus follow-up (2026-09-09 UTC)
+
+On Maddie's ice-cream composer, focusing with the software keyboard suppressed
+reproducibly scrolled the editor out of view and lost the input connection,
+including with direct ADB taps. Restarting Hinge did not fix it. Enabling
+`adb -s 127.0.0.1:6555 shell settings put secure show_ime_with_hard_keyboard 1`
+kept the field visible and allowed clipboard paste/readback. This setting remains
+enabled on the emulator. The original value was 0.
+
+With the keyboard visible, XML omits the Discover Skip control. Editing checks
+therefore use the foreground package and exact prompt/composer association after
+pre-focus profile verification. Full label checks resume once the keyboard is
+dismissed. Appium's hide-keyboard command failed; guarded native Android Back
+dismisses the visible keyboard. No submission is part of these diagnostic tests.

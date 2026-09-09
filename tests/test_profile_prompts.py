@@ -86,3 +86,26 @@ class PromptTests(unittest.TestCase):
         b = screen("Prompt: A. Answer: Original", "Dating Preferences", "Age filter options")
         driver = Driver([a, a, a, a, a, b, b, b])
         self.assertEqual(collect_prompts(driver, verify_return=True), [Prompt("A", "Original")])
+
+    @patch("print_profile_prompts.time.sleep")
+    def test_transient_signals_banner_is_not_profile_content(self, sleep):
+        plain = screen("Prompt: A. Answer: Original")
+        root = ET.fromstring(plain)
+        ET.SubElement(root, 'node', {'package': 'co.hinge.app',
+                                   'text': 'Example shows thoughtful signals'})
+        banner = ET.tostring(root, encoding='unicode')
+        driver = Driver([banner, banner, banner, banner, banner, plain, plain, plain])
+        observations = []
+        self.assertEqual(collect_prompts(driver, verify_return=True,
+                         on_observation=observations.append), [Prompt('A', 'Original')])
+        self.assertEqual(ET.tostring(observations[-1]), ET.tostring(ET.fromstring(plain)))
+
+    @patch("print_profile_prompts.time.sleep")
+    def test_other_text_changes_still_fail_continuity(self, sleep):
+        plain = screen('Prompt: A. Answer: Original')
+        root = ET.fromstring(plain)
+        ET.SubElement(root, 'node', {'package': 'co.hinge.app', 'text': 'A personal detail'})
+        changed = ET.tostring(root, encoding='unicode')
+        driver = Driver([plain, plain, plain, plain, plain, changed, changed, changed])
+        with self.assertRaisesRegex(RuntimeError, 'top content changed'):
+            collect_prompts(driver, verify_return=True)

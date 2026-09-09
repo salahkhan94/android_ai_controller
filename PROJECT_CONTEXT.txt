@@ -1,18 +1,24 @@
 Android AI Controller — project context and implementation plan
-Updated: 2026-09-08
+Updated: 2026-09-09
 
 PURPOSE
 Build a Python AI application that observes and controls an Android emulator
-running Hinge through Appium/ADB, using an LLM and optionally vision.
+running Hinge through Appium/ADB, using an LLM for written text prompts.
+Current scope: text prompts only. Photo/image interpretation and photo-targeted
+comments/likes are excluded. Phase 6 is cancelled at the user's request.
+Screenshots remain available as UI diagnostic and verification evidence only.
 The user runs Ubuntu 26.04 and has installed Genymotion, Appium, and ADB.
 
 REQUESTED FEATURES
 1. Profile comments and likes (first priority):
-   - Read a profile's photos and written prompt responses.
-   - Select a particular photo or prompt response as the comment target.
+   - Read a profile's written prompt titles and responses.
+   - Select a written prompt response as the comment target; never a photo.
    - Generate a very funny, perhaps slightly flirtatious, relevant comment.
    - Ultimately attach that comment to the selected item and send the like.
-   - Current requested deliverable: Phase 2 structured written-prompt extraction.
+   - Phases 1–5 implemented. One explicitly authorized submission was attempted;
+     the app advanced profiles without explicit confirmation. Do not retry it.
+   - Current workflow: run.py handles one text profile end-to-end with mandatory
+     per-comment terminal approval before preparation and submission. Phase 6 cancelled.
 2. Conversations (later):
    - Open conversations with matches and detect new incoming messages.
    - Generate replies using the whole conversation so far as context.
@@ -34,7 +40,7 @@ CURRENT IMPLEMENTATION / VERIFIED PROGRESS
 - The assistant inspected the original script and then ran live Phase 1 captures;
   see the live inspection findings below.
 - XML-only written prompt reading now exists in print_profile_prompts.py.
-  No model integration, comment generation, or sending exists yet.
+  Phase 3 OpenAI draft generation is now implemented; no sending exists.
 - Phase 1 capture tooling now exists: capture_profile.py (CLI) and observation.py
   (reusable observation layer). Original android_tester.py is unchanged.
 - Saves screenshot, before/after XML, package/activity, window and image sizes,
@@ -57,7 +63,7 @@ CURRENT IMPLEMENTATION / VERIFIED PROGRESS
   and action readiness must be separate. No resource IDs on inspected item controls.
 - See LIVE_UI_FINDINGS.md for local evidence paths and Phase 2 extraction approach.
 - Phase 1 is complete for the inspected profile/prompt; other layouts and composer
-  behavior remain unverified. No model integration or sending exists.
+  behavior remain unverified. Phase 3 adds draft generation; no sending exists.
 
 ARCHITECTURE DISCUSSED (RECOMMENDATIONS, NOT IMPLEMENTED)
 Observe -> identify screen/extract content -> propose structured action ->
@@ -65,7 +71,8 @@ validate current state and target -> execute -> observe and verify result.
 - Use Appium as the primary UI control interface; ADB for device diagnostics
   and management. Keep the currently working Genymotion environment.
 - Prefer UI-tree text, IDs, accessibility labels, and bounds when available.
-  Use screenshot/vision for photos and content absent from the UI tree.
+  Extract prompt content from XML. Retain screenshots for UI diagnostics and
+  verification only; do not add photo analysis or image-targeted comments.
 - Capture both sources close together and discard observations when the
   screen changes; they are not an atomic snapshot.
 - Let the model select among extracted item IDs and propose text. Python
@@ -75,7 +82,7 @@ validate current state and target -> execute -> observe and verify result.
 - Verify sends before any retry to prevent duplicate likes/comments.
 - Review-before-send was proposed, but the user has not yet specified their
   preferred review policy versus unattended operation.
-- Current scope is Phase 2 extraction and read-only scrolling; no sending is authorized.
+- Current scope is Phase 4 composer preparation and text entry; no sending is authorized.
 
 KNOWN PLATFORM CONSTRAINT
 Hinge states that third-party bots and automation software violate its terms
@@ -99,7 +106,7 @@ Phase 2 — Extract structured profile items.
   text, and locator/bounds evidence tied to its observation.
   Use bounded scrolling and overlap deduplication if prompts span screens.
   Distinguish items from different profiles; stop if identity/state is unclear.
-  Begin with written prompts; add photo crops and vision after this path works.
+  Support written prompts only; photo crops and vision are out of scope.
   Outcome: a reliable list of candidate prompt targets from one profile.
 
 Phase 3 — Generate and select comments without sending.
@@ -127,10 +134,9 @@ Phase 5 — Submit and verify when authorized.
   Stop on unexpected dialogs, profile changes, or missing controls.
   Outcome: one intended like/comment with evidence of success or clear uncertainty.
 
-Phase 6 — Add photo targets.
-  Extract photo regions and use vision to describe relevant visible details.
-  Generate comments grounded in those details and reuse the same target
-  validation, composer, and submission flow.
+Phase 6 — CANCELLED: photo targets.
+  User explicitly excluded image/photo interpretation and photo-targeted comments
+  or likes. Do not implement this phase. Continue with written text prompts only.
 
 VALIDATION
 - Use saved UI fixtures to check prompt extraction and target association.
@@ -141,12 +147,14 @@ VALIDATION
 - Avoid committing private profile screenshots, message content, or API keys.
 
 NEXT STEP FOR A NEW CHAT
-Read this file and android_tester.py, then inspect repository instructions.
-Read LIVE_UI_FINDINGS.md and the referenced local captures, if still available.
-Phase 2 structured written-prompt extraction now exists (see latest progress below).
-Next is Phase 3 configurable LLM draft generation from structured prompt items.
-Conversation automation and photo comments remain later phases; no LLM or sending
-logic exists yet.
+Read this file and README.md, then inspect repository instructions.
+The main entry point is .venv/bin/python run.py. It scans one currently open
+Discover profile, generates comments, displays target/response/exact text, and
+waits for SEND approval before preparation and one submission. User may choose
+c1/c2/c3 or cancel. No unattended mode is authorized or implemented.
+Phases 1–5 remain available separately. Phase 6 is cancelled; text prompts only.
+Read the persistent submission ledger before device actions; never retry an
+uncertain attempt. Conversation automation remains separate future work.
 
 XML-ONLY PROMPT READER (latest progress)
 - Added print_profile_prompts.py: prints distinct prompt titles/responses from
@@ -190,3 +198,191 @@ PHASE 2 IMPLEMENTATION
   an observed associated like control; return-to-top continuity check passed.
 - Successful report: captures/profile_d520443961b149cf9e7149fa4cd762d1/profile.json.
   Supporting XML references validated. Emulator left at profile top; nothing sent.
+
+PHASE 3 IMPLEMENTATION (latest progress)
+- User selected OpenAI API. Added openai>=2,<3; installed SDK 2.54.0 into .venv.
+- comment_drafts.py: reduces Phase 2 reports to prompt IDs/titles/responses, builds
+  strict JSON schema requests, and validates three options plus recommendation.
+- llm_client.py: OpenAI Responses API adapter; explicit official endpoint, 60s
+  timeout, no automatic retries, store=False, bounded output, refusal/incomplete
+  response handling. No emulator tools are available to the model.
+- generate_comments.py: CLI takes a profile.json, generates and displays three
+  comments alongside target prompt text, and saves unique unapproved drafts.
+- Default model gpt-5.6-sol; configurable via --model or OPENAI_MODEL. API key is
+  read from OPENAI_API_KEY; the project-root .env is now loaded automatically.
+- --item-id restricts generation to one prompt; otherwise model chooses target(s).
+  --tone, --max-chars, and --about-me customize drafts. Default 180-character
+  budget is NOT a verified Hinge limit; composer remains uninspected.
+- Validates scan completion, item IDs, schema, source quote membership, distinct
+  comments, length, and selected recommendation. Does not guarantee joke quality,
+  factuality, or immunity to prompt injection. User review remains necessary.
+- Outputs include source scan/path/SHA256, target text, model/usage, prompt version,
+  and approved=False. Requires fresh UI resolution for any future action.
+- --dry-run saves the exact request without calling the API. Offline preview on
+  the saved live profile succeeded; stored in
+  captures/drafts_fac5fe6684724779977ba91c0c8a565a/request.json.
+- 27 tests pass, including mocked end-to-end generation, refusal/incomplete output,
+  invalid targets/quotes, duplicates, limits, request isolation, and offline mode.
+- User has configured OPENAI_API_KEY in the project .env; loading was verified
+  without printing the key. A real generated draft set was subsequently found and used for Phase 4;
+  no systematic model-quality evaluation has been performed.
+- All new Python files include descriptive top-level docstrings. README contains
+  setup, execution, customization, validation limits, and official API references.
+
+- Updated default to gpt-5.6-sol at user request for a newer, stronger model.
+  Uses reasoning effort none for short draft generation. API quality/access
+  still require live validation; local tests do not establish model quality.
+
+- Added python-dotenv and automatic project-root .env loading for CLI and adapter.
+  Exported environment variables take precedence; interpolation is disabled.
+  .env remains Git-ignored. All 28 tests pass. No API call made for setup checks.
+
+PHASE 4 IMPLEMENTATION (latest progress, 2026-09-09)
+- prepare_comment.py: explicit --candidate c1/c2/c3/recommended selection. Validates
+  source SHA256, candidate/target membership, and rejects input control/key codes.
+- Default path scans current profile, compares all written prompts with source,
+  checks profile label, resolves fresh target control, and opens inline composer.
+- Composer verification requires exact prompt description and Edit comment field
+  in the same container. Send labels observed: Send like / Send like with message.
+- Generic Compose field hides its text from XML. Native focus plus clipboard paste
+  works; Ctrl+A/Ctrl+C with unique marker provides exact full-text read-back.
+- Restores previous text clipboard (not non-text formats), saves before/after
+  evidence and preparation.json. No send or rose control is ever activated.
+- --inspect-only opens/captures without typing. --resume-composer explicitly
+  permits replacing an already-open matched composer without full profile rescan.
+- Unknown or changed targets, read-back mismatch, and unstable final captures stop
+  the flow. No automatic text-entry retry. Same-name/same-content profile ambiguity
+  remains a limitation. Composer maximum length is still not established.
+- Real Phase 3 draft set present:
+  captures/drafts_16d5a68b6f59439bb43747dc5f3cb66c/drafts.json
+- Live Phase 4 succeeded with recommended candidate c3; text verified exactly,
+  stable final capture, composer left open with unsent draft. Successful receipt:
+  captures/preparation_bca384a0059940e983bf867c8ecb4eb5/preparation.json
+- 33 tests pass including provenance, composer association, Unicode paste/read-back,
+  clipboard restore on failure, and no submission key/control activation.
+- Next: review the prepared draft. Phase 5 submission and its authorization policy
+  remain unimplemented. No approval to send has been granted in this conversation.
+
+PHASE 5 IMPLEMENTATION (latest progress)
+- submit_comment.py verifies a successful Phase 4 receipt, current profile/prompt,
+  exact copied field text, and fresh Send like with message control. Default only
+  checks; --send explicitly authorizes one real submission transaction.
+- Exclusive, flushed attempt ledger in captures/submissions blocks repeated or
+  concurrent sends to the same profile-label/prompt combination, across draft IDs.
+  Crash/timeouts remain uncertain and are not automatically retried.
+- An observed Rose upsell may follow initial Send Like. During an authorized run,
+  Send Like anyway may be clicked once after recording that step. Never sends Roses.
+- Profile advancement alone is not confirmed success. Provisional English success
+  labels produce confirmed_by_ui; other outcomes remain uncertain. Live post-send
+  confirmation behavior has not yet been validated.
+- Live preflight succeeded after closing an already-open Rose upsell without
+  selecting a send option. Exact selected draft and target were verified.
+- Check receipt: captures/submissions/check_97fe9aac383f4890aebb4f38a5c781d0.json
+- 38 tests pass, including exclusive claims, timeout/no-retry, upsell continuation,
+  wrong targets, clipping, and conservative outcome classification.
+- No submission performed by the assistant. Awaiting explicit approval to send
+  c3 to Kate's Two truths and a lie prompt:
+  Bold parking claim. Are we judging on speed, precision, or how dramatically you glance at the backup camera?
+
+AUTHORIZED PHASE 5 LIVE ATTEMPT
+- User explicitly approved sending the standard like with the selected comment.
+- Ran submit_comment.py with --send against the verified Phase 4 preparation.
+- The send action was issued once; Hinge advanced to a different profile.
+- No explicit success label was observed, so status remains
+  uncertain_profile_advanced, not confirmed delivery. Do not retry this target.
+- Durable receipt and before/after evidence:
+  captures/submissions/4a2279c20381f01b54fe4c7b4721f30c03cd2aff0f8bf59de2e10fe228da3d4c.json
+- No Rose confirmation step was needed in this attempt. Authorization applied
+  only to this specific like/comment, not future profiles or bulk sending.
+
+SCOPE DECISION — TEXT PROMPTS ONLY
+- User cancelled Phase 6. Do not implement photo/image understanding or comments
+  and likes targeted at photos. Written prompt workflows remain in scope.
+- Conversation work remains a separate future feature; this decision does not
+  cancel it. Existing screenshot capture remains for UI evidence, not photo analysis.
+- Earlier photo-related inspection findings are historical observations only,
+  not requirements or planned work. No executable code changed for this decision.
+
+FOLLOW-UP: TRANSIENT SIGNALS BANNER
+- Scan profile_b1ebff7e41c647c9b58e497320d20acf failed top continuity.
+  Starting XML contained "Harlie shows thoughtful signals"; subsequent top
+  capture 20260909T030753_847841Z_27f533cc lacked that temporary banner.
+  Name, photo description and first prompt matched. The ending XML was not
+  saved by the old scan, so this comparison uses the subsequent live capture.
+- Exclude only the exact current-name "shows thoughtful signals" banner from
+  the continuity signature. Other text and prompt changes still stop the scan.
+  Save the return-to-top observation before comparison, including on failure.
+- 52 tests pass, including disappearing-banner and real-text-change regressions.
+- Full live read-only scan passed: profile_f78aa36676eb400bb9c0f3e3ebb8a8b1,
+  all three Harlie prompts extracted with return-to-top verification. No comments
+  generated or sent. Emulator left at profile top for a fresh run.py.
+
+FOLLOW-UP: HARLIE COMPOSER AND COMMENT STYLE
+- run_318b63e791364d4e865693317e05ba89 stopped at revealing_composer,
+  before text entry or submission. Failure screenshot shows the keyboard open
+  and Skip hidden. The previous one-time dismissal did not cover delayed keyboard
+  opening or refocus during composer repositioning.
+- reveal_composer now checks keyboard state before every observation, including
+  after swipes. read_unobscured_profile permits four bounded attempts only for
+  a missing Skip label; wrong profile/package still stops immediately. Existing
+  single-Back and exact target association guards remain.
+- User requires no em dashes in generated comments. Prompt version v2 explicitly
+  forbids U+2014 and draft validation rejects it, including in older saved drafts.
+  Generate fresh drafts rather than editing already-approved outgoing text.
+- 50 automated tests pass, including delayed keyboard opening, bounded identity
+  retries, immediate wrong-profile rejection, and em-dash rejection.
+- Live Harlie composer verification passed three consecutive checks using the
+  patched reveal_composer. Evidence: captures/20260909T030445_699686Z_0199e040.
+  No text was entered and nothing sent. Full generation-to-send was not rerun.
+
+COMPOSER INPUT DIAGNOSIS (2026-09-09 UTC)
+- User run_c7a627bed14249d99d710f97cc07ac7a failed during preparation,
+  before submission. With show_ime_with_hard_keyboard=0, a direct ADB tap
+  reproduced Hinge scrolling the composer off-screen and losing input focus.
+  Restarting Hinge did not resolve it. This is not proven to be Genymotion alone.
+- Set Android secure show_ime_with_hard_keyboard to 1 on this emulator. The
+  visible software keyboard kept the editor in view and allowed exact clipboard
+  readback. Leave this enabled for this workflow; no app data was cleared.
+- The keyboard hides the Discover Skip label. During editing only, validate
+  Hinge foreground package and the exact target-associated composer after the
+  full pre-focus profile check. After dismissing the visible keyboard with
+  Android Back, resume full profile verification. Appium hide_keyboard failed
+  on this emulator, so use the guarded native Back event instead. Android's
+  keyboard visibility flag can remain true after dismissal: never issue Back
+  when Skip is already exposed, and wait for Skip after a single dismissal.
+- Preparation failures now save stage, error and failure screenshot/XML, with
+  an evidence path printed to stderr. Focus loss stops before keyboard events.
+- Diagnostic runs only prepare text; no like was sent during this investigation.
+- 47 automated tests pass, including hidden-Skip editing checks, wrong-target
+  rejection, focus loss before keys, failure evidence, and stale keyboard flags.
+- Final live preparation succeeded: captures/preparation_247098ddc9044c7eb55a9e5813a57603/preparation.json
+  is text_verified_not_submitted. Verification-only Phase 5 also succeeded:
+  captures/submissions/check_bab9717f9938419c8e1122f53d71d54f.json is ready_not_sent.
+  Maddie's c3 ice-cream comment remains in the composer, unsent. Close this
+  composer manually before a fresh run.py; no diagnostic test sent a like.
+
+HUMAN-IN-THE-LOOP RUNNER
+- Added run.py to orchestrate scan_profile -> generate_comments -> user review ->
+  prepare_comment -> submit_comment for exactly one current profile.
+- Approval display includes profile name, prompt title, profile response, and the
+  exact candidate comment. c1/c2/c3 changes selection and redisplays it; SEND/yes
+  approves that displayed option. Empty input, no, or EOF cancels without preparing
+  or sending. Ctrl+C also stops. No auto-approval flag exists.
+- Disconnects Appium during generation/review and reconnects after approval, then
+  rechecks the full profile through Phase 4 and the exact field through Phase 5.
+- Binds approval to the candidate, item ID, text, scan ID, and draft-file SHA256.
+  Changes invalidate approval. Prepared text must match the approval before submit.
+- One runner per device via local file lock. Uses project-root captures/ for all
+  artifacts and the existing shared submission ledger, regardless of working dir.
+- prepare() accepts output_root and returns preparation_path for orchestration;
+  standalone behavior is preserved. run_<id>/run.json records approval and outcome.
+- User intends to assess quality with human approval first. Removing the approval
+  step is a possible future request, not current authorization.
+- 43 tests pass including cancellation/EOF, alternate selection, changed drafts,
+  mismatched preparation, session cleanup, and one approved uncertain submission.
+- Live runner test succeeded through scanning, real OpenAI generation, and the
+  approval display for Maddie's ice-cream prompt. EOF cancelled at approval; no
+  composer preparation or submission occurred. Run record:
+  captures/run_cdc82c1629894bef998a284b76fdcb78/run.json
+- Approved orchestration path is covered with simulated stages; phase preparation
+  and submission were already exercised live separately. No new live send occurred.

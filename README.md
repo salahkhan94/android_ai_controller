@@ -1,5 +1,59 @@
 # Android AI Controller
 
+Current scope: **written text prompts only**. Phase 6 (photo/image understanding
+and photo-targeted comments or likes) is cancelled. Screenshots are retained for
+UI diagnostics and verification, not for generating comments about images.
+
+## Run the complete workflow
+
+Start Genymotion and Appium, open the current Hinge Discover profile, and run:
+
+```bash
+.venv/bin/python run.py
+```
+
+Your API key is loaded from the project `.env`. The runner:
+
+1. Scans the current profile's written prompts and generates three comment options.
+2. Shows the recommended prompt title, their response, and the exact proposed comment.
+3. Waits for approval. Type `c1`, `c2`, or `c3` to review another option; type `SEND`
+   (or `yes`) to approve the displayed option. Enter, `no`, or EOF cancels.
+4. Reconnects to the emulator, rechecks the profile, prepares the approved text,
+   verifies it, and attempts one standard like/comment submission.
+5. Records the outcome and stops. An uncertain outcome is never automatically retried.
+
+Generated comments must not contain em dashes. The generation instructions forbid
+them and validation rejects any draft set that still contains one. Older drafts
+with em dashes must be regenerated before preparation.
+
+Approval is required every run and applies only to the displayed target and text.
+No composer is opened or filled before approval. A changed draft invalidates
+approval, and existing composers must be closed manually before starting. Keep the
+emulator untouched while scanning, preparing, and sending. Only one `run.py` process
+can use a device at a time; do not operate separate controller scripts concurrently.
+
+The runner closes its Appium session while you review, so you can take your time.
+It handles one profile per invocation, with no unattended or bulk-send mode.
+All artifacts and the shared duplicate-send ledger live under the project's
+`captures/`, even when launched from a different working directory. Each invocation
+adds a `run_<id>/run.json` with its approval and links to phase artifacts.
+
+Use `--model`, `--tone`, `--max-chars`, `--about-me`, or `--max-scrolls` to adjust
+generation/scanning; `--help` lists the options. Exit code 0 means cancelled or
+UI-confirmed success, 2 means uncertain submission, and 1 means stopped on an error.
+
+On this Genymotion device, keep **Show virtual keyboard** enabled when using a
+physical keyboard. Suppressing it caused Hinge to scroll the comment box away
+and lose input focus. The working setting is already enabled; on a new emulator:
+
+```bash
+adb -s 127.0.0.1:6555 shell settings put secure show_ime_with_hard_keyboard 1
+```
+
+Preparation errors print an evidence directory. Its `preparation.json` includes
+the failed stage and `failure_capture` screenshot/XML. A focus-loss error stops
+before typing; do not bypass target checks to continue.
+
 Phase 1 captures the current Hinge screen for inspection. `observation.py` is
 separate from future extraction, model reasoning, and action execution.
 `android_tester.py` remains the original connection smoke test.
@@ -88,6 +142,173 @@ Skip-label and return-to-top content matches do not provide a unique account ID;
 they cannot detect every transient switch or same-content profile. Unknown layouts
 may require new association rules. Failures leave a report marked `incomplete` with
 the evidence collected so far; do not use incomplete reports for downstream actions.
+
+## Phase 3: generate comment drafts with OpenAI
+
+Run Phase 2 first, then pass its `profile.json` path explicitly. Phase 3 does not
+connect to the emulator; it sends only the extracted item IDs, titles, responses,
+and optional personal facts to OpenAI. It displays three alternatives with one
+recommendation and saves them as unapproved drafts. No likes or messages are sent.
+
+Install the updated dependencies and set your API key in the same terminal:
+
+```bash
+.venv/bin/python -m pip install -r requirements.txt
+read -rsp 'OpenAI API key: ' OPENAI_API_KEY
+export OPENAI_API_KEY
+.venv/bin/python generate_comments.py captures/profile_<id>/profile.json
+```
+
+Replace `profile_<id>` with your actual capture folder. The key is read from the
+environment or the project-root `.env` file, which is loaded automatically. Exported
+environment variables take precedence; `OPENAI_MODEL` can also be set in `.env`. Do not paste a key into
+the code. The default model is `gpt-5.6-sol`; override it with `--model` or
+`OPENAI_MODEL` using a model available to your API account that supports Responses
+and structured outputs.
+
+```bash
+# Inspect the exact model request offline (no key or network required):
+.venv/bin/python generate_comments.py captures/profile_<id>/profile.json --dry-run
+
+# Ask for three options targeting just one prompt:
+.venv/bin/python generate_comments.py captures/profile_<id>/profile.json \
+  --item-id 'profile_<id>:prompt-2' --tone 'Dry wit, playful, lightly flirtatious'
+```
+
+`--max-chars` sets a draft length budget (default 180 Unicode code points), not a
+verified Hinge limit. `--about-me /path/to/private-facts.txt` optionally supplies
+your own facts for personalization. Keep that file outside version control.
+The model is instructed to avoid invented personal claims and to treat profile
+content as untrusted data. These instructions do not guarantee humor or factual
+quality; review each draft yourself.
+
+Outputs go to a unique `captures/drafts_<id>/` folder:
+
+- `request.json` in dry-run mode: the exact request preview, without credentials.
+- `drafts.json` after successful generation and validation: options, recommendation,
+  target text, source scan/path/hash, model/usage information, and approval state.
+
+Incomplete profiles, unknown targets, malformed/refused/incomplete model output,
+duplicates, overlong comments, and quotes absent from the selected source are
+rejected. Source-quote validation checks provenance, not the semantic truth of the
+comment. The adapter disables automatic API retries and requests `store=False`;
+this is not a guarantee of zero provider retention. Existing drafts are never
+overwritten. Draft creation does not grant approval for future submission, and
+saved targets require fresh UI resolution.
+
+Implementation follows the official OpenAI documentation for
+[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+The configurable default is documented on the
+[GPT-5.6 Sol model page](https://developers.openai.com/api/docs/models/gpt-5.6-sol).
+
+## Phase 4: prepare a comment without sending
+
+```bash
+.venv/bin/python prepare_comment.py captures/drafts_<id>/drafts.json --candidate c3
+```
+
+Choose `c1`, `c2`, `c3`, or `recommended`. The script checks the saved profile hash,
+compares the current profile's written prompts against the saved report, re-finds
+the target button from fresh XML, and opens its inline composer. It then verifies
+that the field belongs to the exact selected prompt and pastes the chosen draft.
+It leaves the composer open for review. It never activates Send Like or Send a Rose.
+
+The inspected Hinge composer exposes `Edit comment` as a generic view without
+readable XML text. Phase 4 uses native focus, clipboard paste, then Ctrl+A/Ctrl+C
+to compare the complete field value to the chosen draft. A fresh clipboard marker
+prevents a stale clipboard value from passing the check. The previous text clipboard
+is restored afterward; non-text clipboard formats are not preserved by these APIs.
+No Enter/editor-submit action is used. Control characters and WebDriver key codes
+in drafts are rejected before interacting with Android.
+
+Use `--inspect-only` to open and capture the composer without entering text.
+If a composer is already open, the default stops. `--resume-composer` explicitly
+allows replacing its current text after checking its profile label and exact prompt
+association; this mode does not perform the full profile scan. Keep the emulator
+untouched while the script operates. Same-name/same-content profiles cannot be
+distinguished uniquely by these checks.
+
+Each attempt writes `captures/preparation_<id>/preparation.json`, with before/after
+captures when available. `text_verified_not_submitted` means exact text read-back
+succeeded and the final capture was stable. A failure can leave partial UI changes;
+inspect the composer before retrying. There is no automatic text-entry retry.
+The original draft remains unapproved for submission. Successful read-back checks
+the actual text, but does not establish Hinge's maximum comment length in general.
+
+## Phase 5: submit one prepared comment
+
+First run the preflight against a successful Phase 4 receipt:
+
+```bash
+.venv/bin/python submit_comment.py captures/preparation_<id>/preparation.json
+```
+
+It verifies the saved preparation against the draft/source, checks the current
+profile and target composer, and copies the existing comment for exact comparison.
+It does not replace text. It saves a preflight capture and stops without sending.
+
+To explicitly authorize one actual Send Like click for that prepared comment:
+
+```bash
+.venv/bin/python submit_comment.py captures/preparation_<id>/preparation.json --send
+```
+
+Keep the emulator untouched. The send control must be the unique, visible,
+enabled `Send like with message` button in the verified composer. Rose controls
+and bare-like controls are excluded. Before clicking, the script writes and
+flushes an exclusive attempt record under `captures/submissions/`. A second run
+for the same observed profile is blocked even with a new scan ID or different
+comment. Transport retries are disabled. No automatic send retry is implemented.
+
+Outcomes are recorded conservatively:
+
+- `attempted_outcome_unknown`: durable marker written before clicking; a crash
+  may leave this state even if the click never happened.
+- `profile_advanced_after_send`: two observations show a different Discover
+  profile and no composer. This is UI evidence; server delivery is not independently
+  confirmed.
+- `uncertain`: timeout, unexpected screen, app change, or command error. The
+  attempt stays blocked. Inspect the receipt and app manually before further action.
+
+Do not delete attempt records merely to retry. The fingerprint uses profile label
+and written prompts, not a stable account identifier: same-content profiles may
+be conservatively blocked, and changed profile content can evade this local
+deduplication. This is not a server-side exactly-once guarantee. UI checks are
+sequential and cannot eliminate races caused by external interaction.
+
+## Phase 5: verify and submit once
+
+```bash
+# Check the existing composer; does not send:
+.venv/bin/python submit_comment.py captures/preparation_<id>/preparation.json
+
+# Explicitly authorize one real submission of that exact prepared comment:
+.venv/bin/python submit_comment.py captures/preparation_<id>/preparation.json --send
+```
+
+Phase 5 checks the receipt against the source draft, verifies current profile and
+prompt association, copies the current comment for exact comparison, and resolves
+only the selected composer's `Send like with message` control. It does not modify
+the comment. Keep the emulator untouched during checking and submission.
+
+Before clicking, it exclusively creates and flushes an attempt record under
+`captures/submissions/`. Any recorded attempt blocks another send to the same
+profile-label/prompt-text combination, including attempts from regenerated drafts.
+Do not delete these records to retry an ambiguous send. The key is a conservative
+local duplicate guard, not a server-side idempotency key or unique account identity.
+It cannot prevent duplicates across machines, deleted records, or edited profile text.
+
+The initial click is issued once. If it opens the inspected Rose upsell, the same
+authorized run can choose `Send Like anyway` once, recording that step before
+clicking it. It never chooses Send a Rose. An already-open sheet cannot bypass
+preflight or be resumed by rerunning an attempted submission.
+Timeouts, persistent composers, and profile advancement
+without explicit confirmation remain uncertain (exit code 2). No retries occur.
+English `Like sent`/`Your like was sent` confirmation labels are provisional until
+observed in a real submission; `confirmed_by_ui` is UI evidence, not a delivery
+receipt. Before/after captures are recorded when available. Default checks produce
+`ready_not_sent` and do not consume a send attempt. Exit code 1 means a preflight
+failure or other error; inspect the ledger if a process failed near submission.
 
 ## Tests
 
