@@ -17,14 +17,14 @@ import uuid
 import xml.etree.ElementTree as ET
 
 from observation import capture_observation
-from prepare_comment import read_editing_composer, composer_field, load_selection, node_xpath, reveal_composer
+from prepare_comment import content_bottom, read_editing_composer, composer_field, load_selection, node_xpath, reveal_composer
 from print_profile_prompts import read_profile
 from profile_items import bounds, contains
 
 
 def load_prepared(path):
     receipt = json.loads(Path(path).read_text(encoding="utf-8"))
-    if receipt.get("status") != "text_verified_not_submitted" or receipt.get("submitted") is not False:
+    if receipt.get("status") not in {"text_verified_not_submitted", "text_entered_pending_verification"} or receipt.get("submitted") is not False:
         raise ValueError("Expected a successful, unsent Phase 4 preparation receipt.")
     profile, target, candidate = load_selection(receipt["drafts_path"], receipt["candidate_id"])
     if (receipt.get("source_scan_id"), receipt.get("item_id"), receipt.get("comment")) != (
@@ -49,7 +49,7 @@ def send_control(root, target, size):
             if control.get("class") != "android.widget.Button" or control.get("enabled") != "true" or control.get("displayed") != "true":
                 raise RuntimeError("Send Like control is not ready.")
             # Exclude sticky header, skip overlay, and bottom navigation.
-            safe_area = [int(size["width"] * .22), int(size["height"] * .12), size["width"], int(size["height"] * .85)]
+            safe_area = [int(size["width"] * .22), int(size["height"] * .12), size["width"], content_bottom(root, size)]
             if not contains(safe_area, rect):
                 raise RuntimeError("Send Like control is clipped or outside the safe content area.")
             return node_xpath(root, list(root.iter()).index(control)), rect
@@ -182,7 +182,7 @@ def submit(driver, receipt_path, send=False, output_root="captures"):
                 record["status"] = "confirmation_attempted_outcome_unknown"
                 save_record(attempt_path, record)
                 driver.execute_script("mobile: clickGesture", {"elementId": options[0].id})
-            if record["status"] == "confirmed_by_ui":
+            if record["status"] in {"confirmed_by_ui", "uncertain_profile_advanced"}:
                 break
             time.sleep(.5)
         after, _ = capture_observation(driver, ledger, "co.hinge.app")

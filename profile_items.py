@@ -34,7 +34,10 @@ def extract_items(root, observation_id, window_size):
         description = node.get("content-desc", "")
         if not description.startswith("Prompt: "):
             continue
-        parsed = extract_prompts(ET.fromstring(ET.tostring(node)))[0]
+        parsed_prompts = extract_prompts(ET.fromstring(ET.tostring(node)))
+        if not parsed_prompts:
+            continue
+        parsed = parsed_prompts[0]
         card_bounds = bounds(node.get("bounds"))
         ancestor = parents.get(node)
         card = node

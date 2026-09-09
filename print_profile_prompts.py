@@ -28,7 +28,11 @@ def extract_prompts(root):
         if not description.startswith("Prompt: "):
             continue
         title, separator, response = description[len("Prompt: "):].partition(". Answer: ")
-        if not separator or not title.strip() or not response.strip():
+        if not separator:
+            # Polls and other non-written cards also use the Prompt prefix.
+            # A title alone is not an authored response we can comment on.
+            continue
+        if not title.strip() or not response.strip():
             raise ValueError("Unrecognized or empty prompt description; extraction incomplete.")
         prompt = Prompt(title.strip(), response.strip())
         if prompt not in prompts:
@@ -78,14 +82,21 @@ def collect_prompts(driver, max_scrolls=30, visible_only=False, on_observation=N
             return tuple(tuple(n.get(key, "") for key in
                                ("class", "text", "content-desc", "bounds"))
                          for n in root.iter() if n.get("package") == "co.hinge.app")
-        return current, fingerprint(previous) != fingerprint(current)
+        moved = fingerprint(previous) != fingerprint(current)
+        if not moved:
+            # Confirm a suspected boundary by observing again, not by issuing
+            # another futile swipe against the end of the list.
+            time.sleep(.3)
+            settled, _ = read_profile(driver, label)
+            return settled, fingerprint(current) != fingerprint(settled)
+        return current, True
 
     # Start at the top so output follows profile order, regardless of initial position.
     unchanged = 0
     for _ in range(max_scrolls):
         root, more = scroll("up")
         unchanged = 0 if more else unchanged + 1
-        if unchanged >= 2:
+        if unchanged >= 1:
             break
     else:
         raise RuntimeError("Scroll limit reached before profile top; results incomplete.")
@@ -116,13 +127,13 @@ def collect_prompts(driver, max_scrolls=30, visible_only=False, on_observation=N
             if prompt not in prompts:
                 prompts.append(prompt)
         unchanged = 0 if more else unchanged + 1
-        if unchanged >= 2:
+        if unchanged >= 1:
             if verify_return:
                 stationary = 0
                 for _ in range(max_scrolls):
                     top, moved = scroll("up")
                     stationary = 0 if moved else stationary + 1
-                    if stationary >= 2:
+                    if stationary >= 1:
                         if on_observation:
                             on_observation(top)
                         if content_signature(top) != initial_signature:

@@ -110,7 +110,7 @@ def pipeline(connect, *, model, output_root=PROJECT_ROOT / "captures", max_scrol
         driver = connect()
         try:
             prepared = prepare(driver, drafts_path, approval["candidate_id"],
-                               max_scrolls=max_scrolls, output_root=output_root)
+                               max_scrolls=max_scrolls, output_root=output_root, defer_readback=True)
             record["preparation_path"] = prepared["preparation_path"]
             if digest(drafts_path) != approval["drafts_sha256"] or (
                     prepared["candidate_id"], prepared["item_id"], prepared["comment"], prepared["source_scan_id"]) != (

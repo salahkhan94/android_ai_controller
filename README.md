@@ -4,6 +4,10 @@ Current scope: **written text prompts only**. Phase 6 (photo/image understanding
 and photo-targeted comments or likes) is cancelled. Screenshots are retained for
 UI diagnostics and verification, not for generating comments about images.
 
+Title-only prompt cards without an exposed answer are skipped and recorded in
+`profile.json` under `unsupported_prompt_descriptions`. Only written title/answer
+pairs are offered to the comment generator.
+
 ## Run the complete workflow
 
 Start Genymotion and Appium, open the current Hinge Discover profile, and run:
@@ -25,6 +29,16 @@ Your API key is loaded from the project `.env`. The runner:
 Generated comments must not contain em dashes. The generation instructions forbid
 them and validation rejects any draft set that still contains one. Older drafts
 with em dashes must be regenerated before preparation.
+
+The runner pastes once, then verifies the exact field text once immediately before
+submission. Clipboard copy/restore notifications are not additional paste actions.
+No clipboard writes occur after sending. The standalone preparation command also
+performs its own readback because it may be used independently of the runner.
+
+Scanning confirms boundaries with one unchanged swipe and a stationary XML read.
+Preparation rechecks the prompts, then searches upward from the bottom instead
+of returning to the top first. The initial scan still verifies return-to-top
+continuity, so some bidirectional scrolling is intentional.
 
 Approval is required every run and applies only to the displayed target and text.
 No composer is opened or filled before approval. A changed draft invalidates

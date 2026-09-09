@@ -26,9 +26,14 @@ def scan_profile(driver, output_root="captures", max_scrolls=30):
     folder.mkdir(parents=True, mode=0o700)
     inventory = ProfileInventory(scan_id)
     observations = []
+    unsupported = []
     size = driver.get_window_size()
 
     def record(root):
+        for node in root.iter():
+            description = node.get("content-desc", "")
+            if description.startswith("Prompt: ") and ". Answer: " not in description and description not in unsupported:
+                unsupported.append(description)
         observation_id = f"observation-{len(observations) + 1:03d}"
         xml_file = f"{observation_id}.xml"
         (folder / xml_file).write_bytes(ET.tostring(root, encoding="utf-8"))
@@ -39,7 +44,8 @@ def scan_profile(driver, output_root="captures", max_scrolls=30):
     report = {"schema_version": 1, "scan_id": scan_id, "profile_label": label,
               "identity_assurance": "unverified",
               "window_size": size, "observations": observations, "items": inventory.items,
-              "status": "incomplete", "boundary_method": "two_unchanged_swipes",
+              "unsupported_prompt_descriptions": unsupported,
+              "status": "incomplete", "boundary_method": "unchanged_swipe_then_stationary_read",
               "requires_fresh_resolution": True}
     try:
         collect_prompts(driver, max_scrolls=max_scrolls, on_observation=record, verify_return=True)

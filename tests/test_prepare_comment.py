@@ -12,11 +12,35 @@ import unittest
 import xml.etree.ElementTree as ET
 from unittest.mock import Mock, patch
 
-from prepare_comment import composer_field, dismiss_keyboard, fill_composer, load_selection, node_xpath, prepare, read_editing_composer, read_unobscured_profile
+from prepare_comment import composer_field, dismiss_keyboard, fill_composer, load_selection, node_xpath, prepare, read_editing_composer, read_unobscured_profile, reveal_composer
 from test_comment_drafts import profile, result
 
 
 class PreparationTests(unittest.TestCase):
+    def test_bottom_card_editor_above_navigation_needs_no_scroll(self):
+        root = self.composer()
+        root[0][1].set('bounds', '[50,911][520,1005]')
+        ET.SubElement(root, 'node', {'content-desc': 'Discover', 'bounds': '[0,1081][114,1164]'})
+        driver = Mock()
+        driver.get_window_size.return_value = {'width': 570, 'height': 1230}
+        with patch('prepare_comment.read_unobscured_profile', return_value=(root, 'Skip Example')):
+            reveal_composer(driver, {'profile_label': 'Skip Example'},
+                            {'title': 'Test', 'response': 'Response'})
+        driver.execute_script.assert_not_called()
+
+    @patch('prepare_comment.time.sleep')
+    def test_long_prompt_scrolls_to_editor_below_viewport(self, sleep):
+        clipped = ET.fromstring('<hierarchy><node content-desc="Prompt: Test. Answer: Response"/></hierarchy>')
+        driver = Mock()
+        driver.get_window_size.return_value = {'width': 570, 'height': 1230}
+        with patch('prepare_comment.read_unobscured_profile', side_effect=[
+                (clipped, 'Skip Example'), (self.composer(), 'Skip Example')]):
+            reveal_composer(driver, {'profile_label': 'Skip Example'},
+                            {'title': 'Test', 'response': 'Response'})
+        driver.execute_script.assert_called_once()
+        self.assertEqual(driver.execute_script.call_args.args[1]['direction'], 'up')
+        driver.press_keycode.assert_not_called()
+
     def composer(self, title="Test", send_label="Send like"):
         root = ET.Element('hierarchy')
         card = ET.SubElement(root, 'node')
@@ -33,6 +57,13 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(field.get('content-desc'), 'Edit comment')
         with self.assertRaisesRegex(RuntimeError, 'different or ambiguous'):
             composer_field(self.composer(title='Other'), target)
+
+    def test_composer_matches_extraction_whitespace_normalization(self):
+        root = self.composer()
+        root[0][0].set('content-desc', 'Prompt: Test. Answer: Response ')
+        composer_field(root, {'title': 'Test', 'response': 'Response'})
+        with self.assertRaisesRegex(RuntimeError, 'different or ambiguous'):
+            composer_field(root, {'title': 'Test', 'response': 'Different'})
 
     def test_unrelated_prompt_outside_composer_is_rejected(self):
         root = self.composer()
@@ -137,6 +168,23 @@ class PreparationTests(unittest.TestCase):
             source.write_text(source.read_text() + " ")
             with self.assertRaisesRegex(ValueError, "Source profile changed"):
                 load_selection(path, "c2")
+
+    @patch('prepare_comment.time.sleep')
+    def test_runner_entry_pastes_once_and_defers_copy_to_submission(self, sleep):
+        driver = Mock(current_package='co.hinge.app',
+                      page_source=ET.tostring(self.composer(), encoding='unicode'))
+        driver.get_window_size.return_value = {'width': 570, 'height': 1230}
+        field = Mock()
+        field.get_attribute.return_value = 'Edit comment'
+        driver.find_elements.return_value = [field]
+        driver.get_clipboard_text.return_value = 'previous'
+        fill_composer(driver, {'profile_label': 'Skip Example'},
+                      {'title': 'Test', 'response': 'Response'}, 'Draft', verify=False)
+        keys = [c.args[0] for c in driver.press_keycode.call_args_list]
+        self.assertEqual(keys.count(279), 1)
+        self.assertNotIn(31, keys)
+        driver.get_clipboard_text.assert_called_once()
+        driver.set_clipboard_text.assert_called_with('previous')
 
     @patch('prepare_comment.time.sleep')
     def test_focus_scroll_loss_stops_before_keys_and_restores_clipboard(self, sleep):

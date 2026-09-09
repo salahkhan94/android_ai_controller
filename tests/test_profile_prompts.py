@@ -45,15 +45,23 @@ class PromptTests(unittest.TestCase):
 
     def test_unknown_format_fails_explicitly(self):
         with self.assertRaises(ValueError):
-            extract_prompts(ET.fromstring(screen("Prompt: Missing answer")))
+            extract_prompts(ET.fromstring(screen("Prompt: Missing answer. Answer: ")))
+
+    def test_title_only_card_is_skipped_and_written_prompt_retained(self):
+        root = ET.fromstring(screen('Prompt: Which do we have in common',
+                                   'Prompt: A. Answer: One'))
+        self.assertEqual(extract_prompts(root), [Prompt('A', 'One')])
+        from profile_items import extract_items
+        self.assertEqual([i['title'] for i in extract_items(root, 'test',
+                          {'width': 570, 'height': 1230})], ['A'])
 
     @patch("print_profile_prompts.time.sleep")
     def test_scans_from_top_includes_bottom_and_deduplicates(self, sleep):
         a = "Prompt: A. Answer: One"
         b = "Prompt: B. Answer: Two"
-        driver = Driver([screen(b), screen(a), screen(a), screen(a), screen(a, b), screen(b), screen(b), screen(b)])
+        driver = Driver([screen(b), screen(a), screen(a), screen(a, b), screen(b), screen(b)])
         self.assertEqual(collect_prompts(driver), [Prompt("A", "One"), Prompt("B", "Two")])
-        self.assertEqual(driver.directions, ["down", "down", "down", "up", "up", "up", "up"])
+        self.assertEqual(driver.directions, ["down", "down", "up", "up", "up"])
 
     @patch("print_profile_prompts.time.sleep")
     def test_profile_change_stops_scan(self, sleep):
@@ -63,7 +71,7 @@ class PromptTests(unittest.TestCase):
 
     @patch("print_profile_prompts.time.sleep")
     def test_scroll_limit_does_not_report_completion(self, sleep):
-        driver = Driver([screen(), screen()])
+        driver = Driver([screen(), screen("Prompt: A. Answer: One")])
         with self.assertRaisesRegex(RuntimeError, "Scroll limit"):
             collect_prompts(driver, max_scrolls=1)
 
@@ -76,7 +84,7 @@ class PromptTests(unittest.TestCase):
     def test_return_check_detects_same_name_content_change(self, sleep):
         a = screen("Prompt: A. Answer: Original")
         b = screen("Prompt: A. Answer: Changed")
-        driver = Driver([a, a, a, a, a, b, b, b])
+        driver = Driver([a, a, a, b, b])
         with self.assertRaisesRegex(RuntimeError, "top content changed"):
             collect_prompts(driver, verify_return=True)
 
@@ -84,7 +92,7 @@ class PromptTests(unittest.TestCase):
     def test_return_check_ignores_collapsible_filter_controls(self, sleep):
         a = screen("Prompt: A. Answer: Original")
         b = screen("Prompt: A. Answer: Original", "Dating Preferences", "Age filter options")
-        driver = Driver([a, a, a, a, a, b, b, b])
+        driver = Driver([a, a, a, b, b])
         self.assertEqual(collect_prompts(driver, verify_return=True), [Prompt("A", "Original")])
 
     @patch("print_profile_prompts.time.sleep")
@@ -94,7 +102,7 @@ class PromptTests(unittest.TestCase):
         ET.SubElement(root, 'node', {'package': 'co.hinge.app',
                                    'text': 'Example shows thoughtful signals'})
         banner = ET.tostring(root, encoding='unicode')
-        driver = Driver([banner, banner, banner, banner, banner, plain, plain, plain])
+        driver = Driver([banner, banner, banner, plain, plain])
         observations = []
         self.assertEqual(collect_prompts(driver, verify_return=True,
                          on_observation=observations.append), [Prompt('A', 'Original')])
@@ -106,6 +114,6 @@ class PromptTests(unittest.TestCase):
         root = ET.fromstring(plain)
         ET.SubElement(root, 'node', {'package': 'co.hinge.app', 'text': 'A personal detail'})
         changed = ET.tostring(root, encoding='unicode')
-        driver = Driver([plain, plain, plain, plain, plain, changed, changed, changed])
+        driver = Driver([plain, plain, plain, changed, changed])
         with self.assertRaisesRegex(RuntimeError, 'top content changed'):
             collect_prompts(driver, verify_return=True)

@@ -62,7 +62,7 @@ def node_xpath(root, node_id):
 def open_target(driver, profile, target, max_scrolls=30):
     label = profile["profile_label"]
     read_profile(driver, label)
-    current = collect_prompts(driver, max_scrolls=max_scrolls, verify_return=True)
+    current = collect_prompts(driver, max_scrolls=max_scrolls, verify_return=False)
     expected = [(i["title"], i["response"]) for i in prompt_items(profile)]
     if [(i.title, i.response) for i in current] != expected:
         raise RuntimeError("Current profile prompts do not match the saved profile.")
@@ -94,12 +94,30 @@ def open_target(driver, profile, target, max_scrolls=30):
         driver.execute_script("mobile: swipeGesture", {
             "left": int(size["width"] * .25), "top": int(size["height"] * .2),
             "width": int(size["width"] * .5), "height": int(size["height"] * .55),
-            "direction": "up", "percent": .35, "speed": 400})
+            "direction": "down", "percent": .35, "speed": 400})
         time.sleep(.3)
     raise RuntimeError("Could not expose the target control within the scroll limit.")
 
 
 SEND_LABELS = {"Send like", "Send like with message"}
+
+
+def matches_prompt(description, target):
+    """Use the same edge-whitespace normalization as prompt extraction."""
+    if not description or not description.startswith("Prompt: "):
+        return False
+    title, separator, response = description[len("Prompt: "):].partition(". Answer: ")
+    return bool(separator) and (title.strip(), response.strip()) == (target['title'], target['response'])
+
+
+def content_bottom(root, size):
+    """Use the observed bottom navigation, with a conservative fallback."""
+    from profile_items import bounds
+    edges = [rect[1] for n in root.iter()
+             if n.get('content-desc') == 'Discover'
+             and (rect := bounds(n.get('bounds')))
+             and rect[1] > size['height'] * .7]
+    return min(edges) if edges else int(size['height'] * .78)
 
 
 def composer_field(root, target, require_send=True):
@@ -111,7 +129,6 @@ def composer_field(root, target, require_send=True):
         raise RuntimeError("Expected exactly one comment composer.")
     field = fields[0]
     ancestor = parents.get(field)
-    expected = f"Prompt: {target['title']}. Answer: {target['response']}"
     while ancestor is not None:
         descendants = list(ancestor.iter())
         if any(n.get("content-desc", "").startswith("Skip ") for n in descendants):
@@ -119,7 +136,7 @@ def composer_field(root, target, require_send=True):
         prompts = [n.get("content-desc") for n in descendants
                    if n.get("content-desc", "").startswith("Prompt: ")]
         if prompts:
-            if prompts != [expected]:
+            if len(prompts) != 1 or not matches_prompt(prompts[0], target):
                 raise RuntimeError("Composer belongs to a different or ambiguous prompt.")
             if require_send and not any(n.get("content-desc") in SEND_LABELS for n in descendants):
                 raise RuntimeError("Composer submission control is not exposed yet.")
@@ -135,17 +152,22 @@ def reveal_composer(driver, profile, target):
         root, _ = read_unobscured_profile(driver, profile["profile_label"])
         # Validate the target even when its send button is below the viewport.
         descriptions = [n.get("content-desc") for n in root.iter()]
-        expected = f"Prompt: {target['title']}. Answer: {target['response']}"
+        target_visible = any(matches_prompt(d, target) for d in descriptions)
         direction = "up"
-        if "Edit comment" not in descriptions or expected not in descriptions:
-            if not any(d in SEND_LABELS for d in descriptions) and "Edit comment" not in descriptions:
+        if "Edit comment" not in descriptions or not target_visible:
+            if target_visible and "Edit comment" not in descriptions:
+                # A long expanded prompt can fill the viewport with its editor
+                # and send row still below it. Continue down the same card.
+                direction = "up"
+            elif not any(d in SEND_LABELS for d in descriptions) and "Edit comment" not in descriptions:
                 raise RuntimeError("Selected prompt/composer disappeared; stopping.")
-            direction = "down"  # Prompt/field can be clipped above the send row.
+            else:
+                direction = "down"  # Prompt/field can be clipped above the send row.
         elif any(d in SEND_LABELS for d in descriptions):
             field, selector = composer_field(root, target)
             from profile_items import bounds
             rect = bounds(field.get("bounds"))
-            if rect and rect[1] > size["height"] * .12 and rect[3] < size["height"] * .78:
+            if rect and rect[1] > size["height"] * .12 and rect[3] < content_bottom(root, size):
                 return root, selector
             if rect and rect[1] <= size["height"] * .12:
                 direction = "down"
@@ -158,7 +180,7 @@ def reveal_composer(driver, profile, target):
     raise RuntimeError("Could not fully expose the composer within the scroll limit.")
 
 
-def fill_composer(driver, profile, target, comment):
+def fill_composer(driver, profile, target, comment, *, verify=True):
     """Paste into the verified field and compare a fresh copied value exactly.
 
 Use native key events because the inspected Compose view hides editable text
@@ -186,15 +208,16 @@ from passing read-back validation. No Enter, editor action, or send tap is used.
         driver.press_keycode(279)  # Android KEYCODE_PASTE, including Unicode text.
         time.sleep(.5)
         read_editing_composer(driver, target)
-        marker = "phase4-readback-" + uuid.uuid4().hex
-        driver.set_clipboard_text(marker)
-        driver.press_keycode(29, metastate=4096)  # Select the actual field contents.
-        driver.press_keycode(31, metastate=4096)  # Ctrl+C; no clipboard value is trusted until now.
-        time.sleep(.3)
-        actual = driver.get_clipboard_text()
-        if actual != comment:
-            raise RuntimeError("Entered text could not be verified exactly; inspect manually. No retry was attempted.")
-        driver.press_keycode(22)  # Collapse text selection without submitting.
+        if verify:
+            marker = "phase4-readback-" + uuid.uuid4().hex
+            driver.set_clipboard_text(marker)
+            driver.press_keycode(29, metastate=4096)  # Select the actual field contents.
+            driver.press_keycode(31, metastate=4096)  # Ctrl+C; no clipboard value is trusted until now.
+            time.sleep(.3)
+            actual = driver.get_clipboard_text()
+            if actual != comment:
+                raise RuntimeError("Entered text could not be verified exactly; inspect manually. No retry was attempted.")
+            driver.press_keycode(22)  # Collapse text selection without submitting.
     finally:
         driver.set_clipboard_text(previous_clipboard)
     # Leave both target and send control visible for the user, without pressing it.
@@ -262,7 +285,7 @@ def check_focused_composer(root, target):
 
 
 def prepare(driver, drafts_path, candidate_id, *, max_scrolls=30, inspect_only=False,
-            resume_composer=False, output_root="captures"):
+            resume_composer=False, output_root="captures", defer_readback=False):
     profile, target, candidate = load_selection(drafts_path, candidate_id)
     receipt_dir = Path(output_root) / ("preparation_" + uuid.uuid4().hex)
     receipt_dir.mkdir(parents=True, mode=0o700)
@@ -278,7 +301,7 @@ def prepare(driver, drafts_path, candidate_id, *, max_scrolls=30, inspect_only=F
                        for n in root.iter())
         if existing and not resume_composer:
             raise RuntimeError("A composer is already open. Close it manually or use --resume-composer to replace its text after target verification.")
-        if not existing:
+        if not existing and not resume_composer:
             receipt["stage"] = "opening_target"
             open_target(driver, profile, target, max_scrolls)
         receipt["stage"] = "revealing_composer"
@@ -289,9 +312,9 @@ def prepare(driver, drafts_path, candidate_id, *, max_scrolls=30, inspect_only=F
             receipt["status"] = "composer_opened_no_text_entered"
         else:
             receipt["stage"] = "entering_and_verifying_text"
-            fill_composer(driver, profile, target, candidate["comment"])
-            receipt["status"] = "text_verified_not_submitted"
-            receipt["text_verification"] = "exact_clipboard_readback_with_unique_marker"
+            fill_composer(driver, profile, target, candidate["comment"], verify=not defer_readback)
+            receipt["status"] = "text_entered_pending_verification" if defer_readback else "text_verified_not_submitted"
+            receipt["text_verification"] = "pending_submission_preflight" if defer_readback else "exact_clipboard_readback_with_unique_marker"
         receipt["stage"] = "capturing_prepared_comment"
         after, metadata = capture_observation(driver, receipt_dir, "co.hinge.app")
         receipt["after_capture"] = str(after.resolve())

@@ -87,6 +87,7 @@ class RunnerTests(unittest.TestCase):
                     else:
                         self.assertEqual(record['status'], 'uncertain_profile_advanced')
                         submit.assert_called_once()
+                        self.assertTrue(prepare.call_args.kwargs['defer_readback'])
                         self.assertTrue(submit.call_args.kwargs['send'])
                         second.quit.assert_called_once()
 

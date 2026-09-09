@@ -303,6 +303,58 @@ SCOPE DECISION — TEXT PROMPTS ONLY
 - Earlier photo-related inspection findings are historical observations only,
   not requirements or planned work. No executable code changed for this decision.
 
+FOLLOW-UP: LONG PROMPT HIDES COMPOSER BELOW VIEWPORT
+- Kat preparation_90bc9fe1212d432bb8ede934ff0896e8 stopped before typing.
+  Failure screenshot shows the exact selected long prompt and suggestion chips,
+  with the editor below the viewport. It did not establish a closed composer.
+- reveal_composer now scrolls up (toward lower content) when the exact selected
+  prompt remains exposed but editor/send row are absent. It still requires exact
+  prompt/composer association before text entry and retains the scroll limit.
+- Explicit resume mode no longer calls open_target when the editor is clipped;
+  it only attempts to reveal the existing target. No new Like click on resume.
+- A second cause was confirmed in the saved XML: Kat's answer ends with a space.
+  Extraction strips it, but raw composer comparisons did not. matches_prompt now
+  normalizes only title/answer edge whitespace exactly as extraction does, while
+  preserving strict content and single-target checks. 56 tests pass.
+- The last card also hits the actual scroll boundary with its editor at y911-1005
+  and send row at y1022-1079, above navigation y1081. Fixed percentage thresholds
+  incorrectly rejected it forever. Composer and send checks now use the observed
+  Discover navigation top, with conservative fallback when not exposed.
+- 57 tests pass. Live inspection succeeded without text entry/submission:
+  preparation_dc7abcef1b1b4ab2a140414182948099. Existing Kat composer remains open.
+
+FOLLOW-UP: TITLE-ONLY PROMPT CARDS
+- Nat's "Prompt: Which do we have in common" has no Answer segment and is
+  unsupported for written-comment generation. Both prompt and item extraction
+  now skip title-only descriptions, retain supported written prompts, and record
+  unsupported descriptions in profile.json. Empty explicitly marked answers still
+  fail validation; no answer is inferred from a title or image.
+- 54 tests pass, including mixed unsupported/supported prompt extraction.
+- Full live scan passed on Nat: profile_5646d3c2852c42188d54649bd5126a4a,
+  three written prompts extracted with continuity verification. No entry/send.
+
+FOLLOW-UP: REDUCE CLIPBOARD OPERATIONS AND SCROLLING
+- run.py now requests deferred preparation readback: one paste in preparation,
+  one exact clipboard readback in submit preflight. Standalone prepare still
+  verifies by default. Pending-verification receipts are accepted only as input
+  to submit's mandatory verification, never as proof that text is already valid.
+- No clipboard operations exist after the actual send tap. Clipboard restoration
+  and Genymotion sync can create paste notifications; actual post-send duplicate
+  entry was not reproduced. Runner still performs exactly one paste key event.
+- Preparation still compares all profile prompts with saved evidence, but ends
+  that scan at the bottom and searches upward for the target. It no longer
+  returns to the top then searches down again. Initial scan retains top continuity.
+- Boundary heuristic is now one unchanged swipe plus a stationary XML read,
+  replacing the second no-op swipe. Native boundary flags remain unreliable.
+- Stop outcome polling immediately when the next profile appears; record this
+  as uncertain_profile_advanced, not confirmed success, and never retry.
+- 53 tests pass, including one-paste deferred readback and reduced swipe counts.
+- Live verification stopped on a separate unsupported prompt on Nat's profile:
+  XML exposes "Prompt: Which do we have in common" without ". Answer: ...".
+  Existing strict parser rejects it. Evidence 20260909T032223_440572Z_dd987310;
+  incomplete scan profile_9ee825d5225c4327a2b8b940fd60b54c. No entry or send.
+  Full live verification of these optimizations remains uncompleted.
+
 FOLLOW-UP: TRANSIENT SIGNALS BANNER
 - Scan profile_b1ebff7e41c647c9b58e497320d20acf failed top continuity.
   Starting XML contained "Harlie shows thoughtful signals"; subsequent top
