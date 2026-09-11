@@ -1,10 +1,8 @@
-"""Run successive text-profile workflows with approval before each send.
+"""Run successive text-profile workflows with automatic recommended comments.
 
-Scan the currently open Hinge profile, generate three comment drafts, and show
-the recommended target and exact comment. The user may choose another candidate
-or cancel. Only explicit approval proceeds to fresh profile verification,
-composer preparation, and one submission transaction. Save an audit trail and
-continue when a different profile appears. Never retry a previous send.
+Print profile details and candidates, select the recommended comment, verify the
+current target and text, then submit once. Continue across profiles until quota,
+error, or interruption. --manual restores per-comment approval.
 """
 
 import argparse
@@ -16,9 +14,10 @@ import os
 from pathlib import Path
 import sys
 import uuid
+import traceback
 import xml.etree.ElementTree as ET
 
-from comment_drafts import DEFAULT_TONE
+from comment_drafts import DEFAULT_TONE, prompt_items
 from extract_profile import scan_profile
 from generate_comments import run as generate_drafts
 from llm_client import load_project_env
@@ -70,12 +69,36 @@ def ask_approval(drafts_path, ask=input):
                 "drafts_sha256": original_hash, "approved_at": datetime.now(timezone.utc).isoformat()}
 
 
+def automatic_selection(drafts_path):
+    """Print the complete draft set and bind automatic authorization to its bytes."""
+    original_hash = digest(drafts_path)
+    profile, target, candidate = load_selection(drafts_path, 'recommended')
+    data = json.loads(Path(drafts_path).read_text(encoding='utf-8'))
+    print(f"\nProfile: {profile['profile_label'].removeprefix('Skip ')}", flush=True)
+    for item in prompt_items(profile):
+        print(f"\nPrompt: {item['title']}\nResponse: {item['response']}")
+        options = [c for c in data['drafts']['candidates'] if c['item_id'] == item['item_id']]
+        for option in options:
+            print(f"Candidate {option['candidate_id']}: {option['comment']}")
+        if not options:
+            print('No candidate generated for this prompt.')
+    print(f"\nChosen prompt: {target['title']}\nChosen comment ({candidate['candidate_id']}): {candidate['comment']}")
+    print('Automatically sending this comment with a standard like.', flush=True)
+    if digest(drafts_path) != original_hash:
+        raise RuntimeError('Draft file changed during automatic selection. Nothing sent.')
+    return {'candidate_id': candidate['candidate_id'], 'item_id': target['item_id'],
+            'comment': candidate['comment'], 'title': target['title'], 'response': target['response'],
+            'profile_label': profile['profile_label'], 'source_scan_id': profile['scan_id'],
+            'drafts_sha256': original_hash, 'approved_at': datetime.now(timezone.utc).isoformat(),
+            'authorization_mode': 'automatic_user_configured'}
+
+
 def pipeline(connect, *, model, output_root=PROJECT_ROOT / "captures", max_scrolls=30,
-             tone=DEFAULT_TONE, max_chars=180, about_me="", ask=input, previous_label=None):
+             tone=DEFAULT_TONE, max_chars=180, about_me="", ask=input, previous_label=None, automatic=False):
     output_root = Path(output_root).resolve()
     run_dir = output_root / ("run_" + uuid.uuid4().hex)
     run_dir.mkdir(parents=True, mode=0o700)
-    record = {"schema_version": 1, "status": "started", "approval": None}
+    record = {"schema_version": 1, "status": "started", "approval": None, "stage": "scanning"}
     try:
         print("Scanning the current profile. Keep the emulator untouched while it scrolls.", flush=True)
         driver = connect()
@@ -97,12 +120,14 @@ def pipeline(connect, *, model, output_root=PROJECT_ROOT / "captures", max_scrol
             close_driver(driver)
         profile_path = output_root / profile["scan_id"] / "profile.json"
         record["profile_path"] = str(profile_path)
+        record["stage"] = "generating_comments"
         print("Generating comment options…", flush=True)
         drafts_path = generate_drafts(profile_path, model, tone=tone, max_chars=max_chars,
                                       about_me=about_me, output_root=output_root)
         record["drafts_path"] = str(drafts_path)
         # No device session is held while the user reviews; approval can take time.
-        approval = ask_approval(drafts_path, ask)
+        record["stage"] = "selecting_comment"
+        approval = automatic_selection(drafts_path) if automatic else ask_approval(drafts_path, ask)
         if approval is None:
             record["status"] = "cancelled_without_sending"
             print("Cancelled. Drafts are saved; no comment was entered or sent.")
@@ -118,6 +143,7 @@ def pipeline(connect, *, model, output_root=PROJECT_ROOT / "captures", max_scrol
         print("Approved. Rechecking the profile, preparing the comment, then submitting once…", flush=True)
         driver = connect()
         try:
+            record["stage"] = "preparing_comment"
             prepared = prepare(driver, drafts_path, approval["candidate_id"],
                                max_scrolls=max_scrolls, output_root=output_root, defer_readback=True)
             record["preparation_path"] = prepared["preparation_path"]
@@ -125,6 +151,7 @@ def pipeline(connect, *, model, output_root=PROJECT_ROOT / "captures", max_scrol
                     prepared["candidate_id"], prepared["item_id"], prepared["comment"], prepared["source_scan_id"]) != (
                     approval["candidate_id"], approval["item_id"], approval["comment"], approval["source_scan_id"]):
                 raise RuntimeError("Prepared comment does not match approval. Nothing submitted.")
+            record["stage"] = "submitting_comment"
             submitted = submit(driver, prepared["preparation_path"], send=True, output_root=output_root)
             record["submission"] = submitted
             record["status"] = submitted["status"]
@@ -145,6 +172,10 @@ def pipeline(connect, *, model, output_root=PROJECT_ROOT / "captures", max_scrol
     except Exception as exc:
         record["status"] = "stopped_check_submission_ledger"
         record["error_type"] = type(exc).__name__
+        record["error_locations"] = [{"file": f.filename, "line": f.lineno, "function": f.name}
+                                     for f in traceback.extract_tb(exc.__traceback__)]
+        record["error_message_empty"] = not bool(str(exc).strip())
+        print(f"Failure stage: {record['stage']}. See error_locations in the run record.", file=sys.stderr)
         raise
     finally:
         (run_dir / "run.json").write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -160,7 +191,7 @@ def run_profiles(connect, *, max_profiles=None, **kwargs):
     previous_label = None
     count = 0
     while True:
-        print(f'\nProfile {count + 1}: approval is required before sending.', flush=True)
+        print(f'\nProcessing profile {count + 1}. Ctrl+C stops the session.', flush=True)
         result = pipeline(connect, previous_label=previous_label, **kwargs)
         count += 1
         if result['status'] not in {'confirmed_by_ui', 'uncertain_profile_advanced'}:
@@ -168,7 +199,7 @@ def run_profiles(connect, *, max_profiles=None, **kwargs):
         if max_profiles is not None and count >= max_profiles:
             return result
         previous_label = result['approval']['profile_label']
-        print('Continuing to the next profile. Enter at approval cancels the session.', flush=True)
+        print('Continuing to the next profile.', flush=True)
 
 
 def main():
@@ -181,6 +212,7 @@ def main():
     parser.add_argument("--tone", default=DEFAULT_TONE)
     parser.add_argument("--max-chars", type=int, default=180)
     parser.add_argument("--about-me", type=Path)
+    parser.add_argument("--manual", action="store_true", help="Require approval before each send instead of automatic selection")
     parser.add_argument('--max-profiles', type=int, help='Stop after this many profiles; default continues until likes run out or you cancel')
     args = parser.parse_args()
     if args.max_profiles is not None and args.max_profiles < 1:
@@ -212,7 +244,7 @@ def main():
             about_me = args.about_me.read_text(encoding="utf-8") if args.about_me else ""
             result = run_profiles(connect, max_profiles=args.max_profiles, model=args.model, output_root=output_root,
                               max_scrolls=args.max_scrolls, tone=args.tone,
-                              max_chars=args.max_chars, about_me=about_me)
+                              max_chars=args.max_chars, about_me=about_me, automatic=not args.manual)
             return 0 if result["status"] in {"confirmed_by_ui", "cancelled_without_sending", "likes_exhausted"} else 2
         except (KeyboardInterrupt, EOFError):
             print("Stopped. If submission had started, inspect its ledger before retrying.")
@@ -220,7 +252,7 @@ def main():
         except Exception as exc:
             print(f"Pipeline stopped ({type(exc).__name__}). No automatic retry. Check the run record and submission ledger.", file=sys.stderr)
             if isinstance(exc, (ValueError, RuntimeError)):
-                print(str(exc), file=sys.stderr)
+                print(str(exc).strip() or "The exception supplied no message. See the run record for the failure stage and code locations.", file=sys.stderr)
             return 1
 
 

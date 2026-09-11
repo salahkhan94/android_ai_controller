@@ -20,8 +20,8 @@ Your API key is loaded from the project `.env`. The runner:
 
 1. Scans the current profile's written prompts and generates three comment options.
 2. Shows the recommended prompt title, their response, and the exact proposed comment.
-3. Waits for approval. Type `c1`, `c2`, or `c3` to review another option; type `SEND`
-   (or `yes`) to approve the displayed option. Enter, `no`, or EOF cancels.
+3. Automatically selects the recommended candidate and prints the full prompt and comment.
+   Use `--manual` to restore per-comment approval.
 4. Reconnects to the emulator, rechecks the profile, prepares the approved text,
    verifies it, and attempts one standard like/comment submission.
 5. Records the outcome and continues when Hinge advances to another profile. The previous target is never retried.
@@ -40,20 +40,16 @@ Preparation rechecks the prompts, then searches upward from the bottom instead
 of returning to the top first. The initial scan still verifies return-to-top
 continuity, so some bidirectional scrolling is intentional.
 
-Approval is required every run and applies only to the displayed target and text.
-No composer is opened or filled before approval. A changed draft invalidates
-approval, and existing composers must be closed manually before starting. Keep the
-emulator untouched while scanning, preparing, and sending. Only one `run.py` process
-can use a device at a time; do not operate separate controller scripts concurrently.
+Automatic sending is the default. The terminal prints the name, written prompts,
+responses, candidate comments and chosen comment. For up to three written prompts,
+candidates must cover each one. Press Ctrl+C to stop; an already-started send
+cannot be undone. `--manual` restores interactive approval and cancellation.
 
-The runner closes its Appium session while you review, so you can take your time.
-It continues across profiles with approval for each comment. Enter at approval ends
-the session. Use `--max-profiles 1` for a single profile or another positive limit.
-It stops on an explicit out-of-likes notice, an error, a non-advancing profile, or
-an uncertain outcome without profile advancement. Advancement is not delivery
-confirmation. No purchases, Roses, or automatic quota resets are attempted.
-Quota wording detection covers explicit English notices and has synthetic tests;
-the actual exhausted-likes screen has not yet been verified live.
+Use `--max-profiles 1` for one profile or another positive limit. By default the
+runner continues until quota, an error, or interruption. Duplicate attempts remain
+blocked. Existing composers must be closed before starting. Keep the emulator
+untouched while it operates. No purchases or Roses are sent.
+
 All artifacts and the shared duplicate-send ledger live under the project's
 `captures/`, even when launched from a different working directory. Each invocation
 adds a `run_<id>/run.json` with its approval and links to phase artifacts.

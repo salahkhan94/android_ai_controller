@@ -151,3 +151,49 @@ class ProfileLoopTests(unittest.TestCase):
         self.assertFalse(likes_exhausted(root))
         root = ET.fromstring('<hierarchy><node text="You’ve used all your Likes for today"/></hierarchy>')
         self.assertEqual(outcome(root, 'Skip A'), 'likes_exhausted')
+
+class AutomaticSelectionTests(unittest.TestCase):
+    def test_prints_details_and_selects_recommendation_without_input(self):
+        from run import automatic_selection
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()) as output:
+            _, path = artifacts(tmp)
+            selected = automatic_selection(path)
+            self.assertEqual(selected['candidate_id'], 'c2')
+            self.assertEqual(selected['authorization_mode'], 'automatic_user_configured')
+            self.assertIn('Start a bakery', output.getvalue())
+            for c in result()['candidates']:
+                self.assertIn(c['comment'], output.getvalue())
+            self.assertIn('Chosen comment', output.getvalue())
+
+    def test_automatic_pipeline_never_requests_input(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            data, path = artifacts(tmp)
+            c = result()['candidates'][1]
+            prepared = {'preparation_path': 'receipt', 'candidate_id': 'c2',
+                        'item_id': c['item_id'], 'comment': c['comment'], 'source_scan_id': 'sample'}
+            with patch('run.read_profile', return_value=(ET.fromstring('<hierarchy/>'), 'Skip Example')), \
+                    patch('run.scan_profile', return_value=data), \
+                    patch('run.generate_drafts', return_value=path), \
+                    patch('run.prepare', return_value=prepared), \
+                    patch('run.submit', return_value={'status': 'uncertain_profile_advanced'}) as send:
+                ask = Mock(side_effect=AssertionError('Must not ask'))
+                pipeline(Mock(return_value=Mock()), model='test', output_root=tmp, automatic=True, ask=ask)
+                ask.assert_not_called()
+                send.assert_called_once()
+
+class FailureDiagnosticsTests(unittest.TestCase):
+    def test_empty_generation_error_records_stage_and_locations(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            with patch('run.read_profile', return_value=(ET.fromstring('<hierarchy/>'), 'Skip Example')), \
+                    patch('run.scan_profile', return_value=profile()), \
+                    patch('run.generate_drafts', side_effect=ValueError()), \
+                    patch('run.prepare') as prepare, patch('run.submit') as submit:
+                with self.assertRaises(ValueError):
+                    pipeline(Mock(return_value=Mock()), model='test', output_root=tmp)
+                record = json.loads(next(Path(tmp).glob('run_*/run.json')).read_text())
+                self.assertEqual(record['stage'], 'generating_comments')
+                self.assertTrue(record['error_message_empty'])
+                self.assertTrue(record['error_locations'])
+                self.assertEqual(set(record['error_locations'][0]), {'file', 'line', 'function'})
+                prepare.assert_not_called()
+                submit.assert_not_called()

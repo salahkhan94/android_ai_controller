@@ -303,7 +303,35 @@ SCOPE DECISION — TEXT PROMPTS ONLY
 - Earlier photo-related inspection findings are historical observations only,
   not requirements or planned work. No executable code changed for this decision.
 
-CURRENT RUNNER: SUCCESSIVE PROFILES WITH PER-COMMENT APPROVAL
+LATEST DIAGNOSTIC: BLANK GENERATION VALUEERROR
+- run_a390414fd4974d05b9f5fb1b0e66edbe failed before selection/preparation.
+  Its old record saved only ValueError. Saved profile passes local request preview;
+  original cause cannot be determined from that record alone.
+- run.py now saves stage, exception file/line/function locations without local
+  variables or raw SDK payloads, and whether the message was empty. Terminal
+  prints an explicit fallback instead of a blank line. 65 tests pass.
+- Live API reproduction was rejected by automatic approval review because it
+  would resend saved dating-profile data externally for debugging. No API request
+  was made. Await explicit user approval before retrying that reproduction.
+- User subsequently approved one generation-only reproduction. It succeeded on
+  the same saved profile, producing three valid candidates in
+  captures/drafts_d0337bcab5a64bdbbdd2a5f1845f63e0/drafts.json. No emulator
+  actions or likes were sent. The original blank ValueError was not reproduced;
+  its cause remains unknown. New diagnostics will capture locations if it recurs.
+
+CURRENT AUTHORIZATION: AUTOMATIC SENDING (SUPERSEDES APPROVAL REQUIREMENT)
+- User explicitly requested removal of approval pauses. run.py now automatically
+  selects the recommended candidate and sends, continuing across profiles.
+  --manual restores approval. --max-profiles still caps execution; Ctrl+C stops.
+- Before entry/send, print name, all supported prompt titles/responses, grouped
+  candidate comments and chosen target/comment. Up to three supplied prompts must
+  each receive a candidate; larger sets use three selected prompts.
+- Automatic selection is recorded as automatic_user_configured with exact draft
+  hash and selected text. Existing fresh-target, readback and duplicate-ledger
+  checks remain. Tests do not send live likes; user launches run.py to operate.
+- 64 tests pass including automatic selection and no input calls in auto mode.
+
+HISTORICAL RUNNER: SUCCESSIVE PROFILES WITH PER-COMMENT APPROVAL
 - User requested continuing profile after profile until likes run out. run.py
   now loops by default; existing mandatory approval remains for every comment.
   Enter/EOF at approval cancels the entire session. --max-profiles N optionally

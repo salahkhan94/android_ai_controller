@@ -73,7 +73,8 @@ def build_request(items, tone=DEFAULT_TONE, max_chars=180, about_me=""):
         raise ValueError("Draft length budget must be between 40 and 1000 characters.")
     nonempty(tone, "tone")
     instructions = f"""Write three distinct dating-profile comment drafts for the user to review.
-Choose the most promising supplied prompt(s); candidates may target the same prompt.
+Cover every supplied prompt with at least one candidate when there are at most three
+prompts. If there are more than three, choose the three most promising prompts.
 Use IDs c1, c2, c3 exactly once each, and recommend the strongest candidate.
 Tone: {tone}
 Each comment must be at most {max_chars} Unicode characters including spaces.
@@ -129,6 +130,8 @@ def validate_drafts(value, items, max_chars):
         target = targets[target_id]
         if quote not in target["title"] and quote not in target["response"]:
             raise ValueError("Source quote does not occur in the selected prompt.")
+    if len(targets) <= 3 and {c['item_id'] for c in value['candidates']} != set(targets):
+        raise ValueError('Candidates must cover every supplied written prompt.')
     recommended = nonempty(value["recommended_candidate_id"], "recommended_candidate_id")
     if recommended not in ids:
         raise ValueError("Recommendation does not identify a generated candidate.")
