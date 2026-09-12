@@ -1,4 +1,2 @@
+# Telegram transport uses the Python standard library.
 -r requirements.txt
-Flask>=3,<4
-twilio>=9,<10
-waitress>=3,<4

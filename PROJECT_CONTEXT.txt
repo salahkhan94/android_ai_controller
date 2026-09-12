@@ -1,48 +1,26 @@
-Android AI Controller — project context and implementation plan
-Latest planning update: 2026-09-11
+Android AI Controller — project context
 
-MATCH REPLY SERVICE IMPLEMENTATION (2026-09-11)
-- New reply_bot.py and match_replies package implement Twilio signed/owner-only
-  webhooks, SQLite queues/state/send claims, Begin/selection/Add context, versioned
-  candidate choices, model adapter, Hinge Your turn/history extraction and guarded
-  send path. run.py and all existing profile runtime scripts remain unchanged.
-- Dependencies installed separately in .venv-replies using requirements-replies.txt.
-  Setup: MATCH_REPLY_SETUP.md; placeholders: .env.replies.example. User has NOT yet
-  activated/joined Sandbox; joining instructions were supplied. User confirmed
-  Ubuntu/emulator can remain running. No Twilio credentials or public URL configured.
-- Live list extraction succeeded for Akisha. Full accessible text history read
-  succeeded with 52 entries including opening context and reaction metadata.
-  Coverage is UI-boundary evidence, not a guarantee of inaccessible server history.
-- Actual speaker labels are explicit. A liked bubble adds a reaction suffix;
-  this is parsed separately. See MATCH_REPLY_UI_FINDINGS.md for actual captures.
-- 15 new offline tests pass; all 65 existing tests pass. New environment installed;
-  CLI help and read-only inspections verified. No OpenAI request or reply send
-  occurred in this implementation session.
-- Still pending: user Sandbox join/configuration, HTTPS tunnel/webhook, live
-  WhatsApp round trip, and validating composer/send control with a selected reply.
-  Send selector deliberately stops if unknown; no unverified coordinate fallback.
-- Duplicate names stop pending stronger identity evidence. Multi-page Your turn
-  extraction is implemented but only a one-row live list was available to test.
-- Reply via WhatsApp Reply-to on the displayed candidates with 1/2/3, or use the
-  printed revision code plus number. Unthreaded bare choices never send.
-- Local persistence is captures/match_replies/state.sqlite3. Do not delete attempts
-  to retry a send. Interrupted jobs/uncertain sends are not replayed automatically.
-
-ORIGINAL FEATURE PLAN: WHATSAPP-CONTROLLED MATCH REPLIES
-- See MATCH_REPLIES_PLAN.md for the complete proposed architecture and phases.
-- Preserve run.py and the working automatic profile-comment workflow unchanged.
-- New separate service: Begin -> Your turn list -> choose match -> read full
-  accessible conversation -> three candidate replies -> optional Add context ->
-  user selects 1/2/3 -> verify fresh conversation and send that reply once.
-- Candidate selection is required for match replies; run.py's automatic profile
-  sending authorization does not make match replies automatically selected.
-- User selected a separate Twilio Sandbox bot number for the prototype.
-  Ubuntu hosting availability is still pending clarification.
-- Live Matches/history XML inspection is still needed. No selectors, sender
-  direction rules or complete-history guarantees have been verified for chats.
-- Plan only: no runtime scripts changed, no account connected, no messages sent.
-- Existing per-device run.py lock can be acquired by the new service without
-  altering run.py, preventing simultaneous control of the same emulator.
+CURRENT MATCH REPLY SERVICE: TELEGRAM (supersedes previous provider setup)
+- User switched to Telegram after Twilio Console/Sandbox access problems.
+- Removed WhatsApp webhook runtime (web.py), Twilio/Flask/Waitress requirements,
+  and provider setup instructions. Token is in ignored .env.replies; never print it.
+- reply_bot.py pair uses an expiring code shown on the laptop to bind the private
+  Telegram account. Saves TELEGRAM_OWNER_ID and TELEGRAM_CHAT_ID locally.
+- reply_bot.py serve polls Telegram; no public URL, tunnel, or desktop app needed.
+  Only the paired private account can command it. Polling runs alongside the worker.
+- Begin -> Your turn -> select match -> read full accessible history -> 3 replies
+  -> optional Add context -> Reply to current candidate with 1/2/3 or CODE choice
+  -> fresh-history check -> one guarded send. No em dashes. Choices remain required.
+- run.py and existing profile runtime behavior remain unchanged.
+- SQLite state/attempt ledger remains captures/match_replies/state.sqlite3.
+  Startup invalidates pending commands/drafts, retains send attempts and deduplication.
+  Commands sent while offline are ignored. Never delete the DB as a retry workaround.
+- 21 reply tests + 65 original tests pass. Hinge live read-only evidence previously
+  captured one Your turn match and 52 history entries. Composer/send path still needs
+  live validation with a selected candidate. Pairing and Telegram round trip pending.
+- Setup: MATCH_REPLY_SETUP.md. Architecture: MATCH_REPLIES_PLAN.md.
+- Ubuntu stays awake with Genymotion/Appium/Hinge running. Stop run.py before device
+  operations; shared device lock prevents concurrent emulator control.
 
 The older sections below contain historical milestones; newer entries supersede
 their old statements about the implemented profile workflow.
@@ -532,12 +510,14 @@ HUMAN-IN-THE-LOOP RUNNER
 - Approved orchestration path is covered with simulated stages; phase preparation
   and submission were already exercised live separately. No new live send occurred.
 
-WHATSAPP TUNNEL SETUP (2026-09-11)
-- Installed cloudflared in ignored .venv-replies/bin; temporary tunnel targets only
-  127.0.0.1:8787. URL saved in ignored .env.replies with Twilio credentials.
-- Started reply_bot.py serve and tunnel for this session. Public health returned
-  ok; unsigned webhook POST rejected with 403. No test messages sent.
-- User must save current URL from .env.replies in Twilio Inbound custom webhook
-  (POST), then send Help to verify actual WhatsApp delivery.
-- Restarting tunnel changes URL: update both config and Twilio, restart bot.
-- run.py unchanged. See MATCH_REPLY_SETUP.md for restart commands.
+Telegram connection check: getMe successfully verified @sal_ai_helper_bot and
+getWebhookInfo confirmed no webhook. No messages sent by this check. Phone pairing
+and the Help round trip remain pending.
+
+Send-button fix: live composer inspection exposed resource ID
+co.hinge.app:id/sendMessageButton with description Send message, rather than Send.
+Selector now requires the unique enabled clickable button. The microphone overlaps
+its bounds, so the container is not a send target. Read-only evidence: captures/send_inspection/20260912T033542_318178Z_bd59ce67
+23 reply tests and 65 profile tests pass. No draft sent during diagnosis. Restart
+the bot to load the fix; inspect and clear any leftover unsent draft before Begin
+and a new candidate approval. Actual send confirmation remains to be verified.

@@ -37,3 +37,11 @@ must remain an explicit extraction failure, not silent omission.
 - Reacted message suffix observed: `. Akisha liked this message`. Parser removes
   only that recognized suffix and stores liked_by metadata separately.
 - Date separators are preserved as system entries by the current parser.
+
+Send-button fix: live composer inspection exposed resource ID
+co.hinge.app:id/sendMessageButton with description Send message, rather than Send.
+Selector now requires the unique enabled clickable button. The microphone overlaps
+its bounds, so the container is not a send target. Read-only evidence: captures/send_inspection/20260912T033542_318178Z_bd59ce67
+23 reply tests and 65 profile tests pass. No draft sent during diagnosis. Restart
+the bot to load the fix; inspect and clear any leftover unsent draft before Begin
+and a new candidate approval. Actual send confirmation remains to be verified.

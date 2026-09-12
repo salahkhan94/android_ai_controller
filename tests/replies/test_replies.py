@@ -70,25 +70,6 @@ class ServiceTests(unittest.TestCase):
 
 if __name__=='__main__':unittest.main()
 
-class WebhookTests(unittest.TestCase):
-    def test_signature_owner_and_duplicate_delivery(self):
-        from match_replies.web import create_app
-        from twilio.request_validator import RequestValidator
-        with tempfile.TemporaryDirectory() as tmp:
-            store=Store(Path(tmp)/'db')
-            config={'token':'test-token','url':'https://example.test/whatsapp',
-                    'owner':'whatsapp:+15550000001','sender':'whatsapp:+15550000002'}
-            client=create_app(store,config).test_client()
-            data={'From':config['owner'],'To':config['sender'],'Body':'Begin','MessageSid':'SMtest'}
-            self.assertEqual(client.post('/whatsapp',data=data).status_code,403)
-            signature=RequestValidator(config['token']).compute_signature(config['url'],data)
-            for _ in range(2):
-                self.assertEqual(client.post('/whatsapp',data=data,headers={'X-Twilio-Signature':signature}).status_code,200)
-            self.assertIsNotNone(store.claim('inbox'));self.assertIsNone(store.claim('inbox'))
-            data['From']='whatsapp:+15550000003';data['MessageSid']='SMother'
-            signature=RequestValidator(config['token']).compute_signature(config['url'],data)
-            self.assertEqual(client.post('/whatsapp',data=data,headers={'X-Twilio-Signature':signature}).status_code,403)
-
 class DraftValidationTests(unittest.TestCase):
     def test_full_history_and_context_passed_and_style_enforced(self):
         from unittest.mock import patch
@@ -112,7 +93,7 @@ class SendGuardTests(unittest.TestCase):
         expected={'fingerprint':'old'};h.read=Mock(return_value=expected)
         root=ET.fromstring(f'''<hierarchy><node text="Example" bounds="[200,40][330,80]"/>
         <node resource-id="{COMPOSER}" text="Draft?" bounds="[17,1084][481,1147]"/>
-        <node content-desc="Send" enabled="true" bounds="[490,1080][550,1147]"/>
+        <node resource-id="co.hinge.app:id/sendMessageButton" content-desc="Send message" clickable="true" enabled="true" bounds="[490,1080][550,1147]"/>
         <node content-desc=" Example: Hello. " bounds="[20,300][250,350]"/></hierarchy>''')
         driver=Mock();driver.get_window_size.return_value={'height':1230}
         field=Mock();field.text='';driver.find_elements.return_value=[field]
@@ -160,3 +141,27 @@ class ReplyToTests(unittest.TestCase):
         self.store.delivery('out2','undelivered')
         self.command(state['revision']+' 2')
         self.backend.send.assert_not_called()
+
+class SendControlTests(unittest.TestCase):
+    def test_send_button_selected_even_when_microphone_shares_bounds(self):
+        from match_replies.hinge import send_control, SEND_BUTTON
+        root=ET.fromstring(f'''<hierarchy><node resource-id="co.hinge.app:id/sendChatButtonContainer">
+        <node resource-id="{SEND_BUTTON}" content-desc="Send message" enabled="true" clickable="true" bounds="[492,1043][553,1104]"/>
+        <node resource-id="co.hinge.app:id/microphoneButton" content-desc="Record voice note" enabled="true" clickable="true" bounds="[492,1043][553,1104]"/>
+        </node></hierarchy>''')
+        self.assertEqual(send_control(root).get('resource-id'), SEND_BUTTON)
+        button=send_control(root)
+        for attr in ('enabled','clickable','displayed'):
+            old=button.get(attr)
+            button.set(attr,'false')
+            with self.assertRaises(RuntimeError): send_control(root)
+            if old is None: del button.attrib[attr]
+            else: button.set(attr,old)
+        root.append(ET.fromstring(ET.tostring(button)))
+        with self.assertRaises(RuntimeError): send_control(root)
+
+    def test_microphone_or_generic_send_is_not_a_text_send_target(self):
+        from match_replies.hinge import send_control
+        for desc in ('Send','Record voice note'):
+            root=ET.fromstring(f'<hierarchy><node content-desc="{desc}" enabled="true" clickable="true"/></hierarchy>')
+            with self.assertRaises(RuntimeError): send_control(root)

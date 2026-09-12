@@ -1,4 +1,4 @@
-"""Deterministic WhatsApp commands; only an explicit current choice can send."""
+"""Deterministic Telegram commands; only an explicit current choice can send."""
 import hashlib
 import json
 import re

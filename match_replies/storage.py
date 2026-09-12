@@ -83,7 +83,18 @@ class Store:
             if n:
                 db.execute('INSERT OR REPLACE INTO state VALUES (1,?)',(json.dumps({'mode':'idle'}),))
                 db.execute('UPDATE inbox SET status="interrupted" WHERE status="queued"')
-    def window_open(self):
+    def setting(self, key, default=None):
         with self.db() as db:
-            row=db.execute('SELECT MAX(created) FROM inbox').fetchone()
-            return bool(row[0]) and time.time()-row[0]<23*3600
+            db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)')
+            row=db.execute('SELECT value FROM settings WHERE key=?',(key,)).fetchone()
+            return json.loads(row[0]) if row else default
+    def set_setting(self, key, value):
+        with self.db() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)')
+            db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)',(key,json.dumps(value)))
+    def reset_session(self):
+        # Preserve attempt ledger and inbox deduplication across transport migration.
+        with self.db() as db:
+            db.execute('UPDATE inbox SET status="interrupted" WHERE status IN ("queued","working")')
+            db.execute('UPDATE outbox SET status="uncertain" WHERE status IN ("queued","working")')
+            db.execute('INSERT OR REPLACE INTO state VALUES (1,?)',(json.dumps({'mode':'idle'}),))

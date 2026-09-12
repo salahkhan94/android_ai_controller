@@ -17,6 +17,18 @@ from profile_items import bounds
 from .device import session, ROOT
 
 COMPOSER='co.hinge.app:id/messageComposition'
+SEND_BUTTON='co.hinge.app:id/sendMessageButton'
+
+def send_control(root):
+    controls=[n for n in root.iter() if n.get('resource-id')==SEND_BUTTON]
+    if len(controls)!=1:
+        raise RuntimeError('Send control has not been uniquely verified. Draft left unsent.')
+    node=controls[0]
+    if (node.get('content-desc')!='Send message' or node.get('enabled')!='true'
+            or node.get('clickable')!='true' or node.get('displayed')=='false'):
+        raise RuntimeError('Send message button is unavailable. Draft left unsent.')
+    return node
+
 
 def fingerprint(value):
     return hashlib.sha256(json.dumps(value,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
@@ -226,12 +238,15 @@ class Hinge:
                 time.sleep(.5)
                 root=root_for(d);header(root,match['name'])
             if messages(root,match['name'])!=before: raise RuntimeError('Messages changed while composing. Nothing sent.')
-            controls=[n for n in root.iter() if n.get('content-desc')=='Send' and n.get('enabled')=='true']
-            if len(controls)!=1: raise RuntimeError('Send control has not been uniquely verified. Draft left unsent.')
+            try:
+                control=send_control(root)
+            except RuntimeError:
+                capture_observation(d,ROOT/'captures'/'matches','co.hinge.app')
+                raise
             # Claim is durable BEFORE the sole send click. A timeout never retries.
             if not claim(): raise RuntimeError('An attempt already exists for this conversation revision.')
             try:
-                tap(d,root,controls[0])
+                tap(d,root,control)
                 for _ in range(10):
                     root=root_for(d);header(root,match['name']);after=messages(root,match['name'])
                     expected_new={'sender':'me','text':text}
