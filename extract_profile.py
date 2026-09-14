@@ -54,6 +54,11 @@ def scan_profile(driver, output_root="captures", max_scrolls=30):
         report["status"] = "scan_finished_with_heuristic_boundaries"
     except Exception as exc:
         report["error"] = str(exc)
+        try:
+            (folder / "failure.xml").write_text(driver.page_source, encoding="utf-8")
+            report["failure_xml"] = "failure.xml"
+        except Exception:
+            pass
         raise
     finally:
         (folder / "profile.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")

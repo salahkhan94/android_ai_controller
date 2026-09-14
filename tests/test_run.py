@@ -197,3 +197,16 @@ class FailureDiagnosticsTests(unittest.TestCase):
                 self.assertEqual(set(record['error_locations'][0]), {'file', 'line', 'function'})
                 prepare.assert_not_called()
                 submit.assert_not_called()
+
+
+class FreeLikeQuotaTests(unittest.TestCase):
+    def test_observed_free_like_notice_is_exhaustion_not_uncertainty(self):
+        from submit_comment import likes_exhausted, outcome
+        import xml.etree.ElementTree as ET
+        for text in ("You're out of free likes for today", "You’re out of free likes for today!"):
+            root=ET.Element('hierarchy')
+            ET.SubElement(root, 'node', text=text)
+            self.assertTrue(likes_exhausted(root))
+            self.assertEqual(outcome(root, 'Skip Monica'), 'likes_exhausted')
+        root=ET.fromstring('<hierarchy><node text="Get more free likes"/></hierarchy>')
+        self.assertFalse(likes_exhausted(root))

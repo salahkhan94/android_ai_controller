@@ -117,3 +117,50 @@ class PromptTests(unittest.TestCase):
         driver = Driver([plain, plain, plain, changed, changed])
         with self.assertRaisesRegex(RuntimeError, 'top content changed'):
             collect_prompts(driver, verify_return=True)
+
+class SchedulingCardContinuityTests(unittest.TestCase):
+    def test_clipped_fixed_labels_do_not_change_identity(self):
+        from print_profile_prompts import profile_content_signature
+        root=ET.fromstring(screen('Prompt: A. Answer: One'))
+        card=ET.SubElement(root,'node')
+        for text in ('Let’s get together','Choose a time'):
+            ET.SubElement(card,'node',{'package':'co.hinge.app','text':text})
+        before=profile_content_signature(root,'Skip Example')
+        for text in ('for','our first date'):
+            ET.SubElement(card,'node',{'package':'co.hinge.app','text':text})
+        self.assertEqual(before,profile_content_signature(root,'Skip Example'))
+        ET.SubElement(root,'node',{'package':'co.hinge.app','text':'our first date'})
+        self.assertNotEqual(before,profile_content_signature(root,'Skip Example'))
+
+    def test_changed_prompt_still_invalidates_identity(self):
+        from print_profile_prompts import profile_content_signature
+        a=ET.fromstring(screen('Prompt: A. Answer: One'))
+        b=ET.fromstring(screen('Prompt: A. Answer: Two'))
+        self.assertNotEqual(profile_content_signature(a,'Skip Example'),profile_content_signature(b,'Skip Example'))
+
+class VideoBoundaryTests(unittest.TestCase):
+    def test_timer_updates_are_not_scroll_movement_but_geometry_is(self):
+        from print_profile_prompts import scroll_fingerprint
+        a=ET.fromstring(screen('Elapsed time: 17 seconds','Prompt: A. Answer: One'))
+        b=ET.fromstring(screen('Elapsed time: 19 seconds','Prompt: A. Answer: One'))
+        self.assertEqual(scroll_fingerprint(a),scroll_fingerprint(b))
+        b[-1].set('bounds','[0,100][100,200]')
+        self.assertNotEqual(scroll_fingerprint(a),scroll_fingerprint(b))
+        c=ET.fromstring(screen('Elapsed time: 19 seconds','Prompt: A. Answer: Two'))
+        self.assertNotEqual(scroll_fingerprint(a),scroll_fingerprint(c))
+
+class ResizedViewportTests(unittest.TestCase):
+    def top(self, y, extra=False):
+        root=ET.fromstring(screen(name='Example'))
+        region=ET.SubElement(root,'node',{'class':'android.view.View','scrollable':'true','bounds':f'[0,{y}][570,1081]'})
+        ET.SubElement(region,'node',{'package':'co.hinge.app','content-desc':"Example's photo",'bounds':f'[28,{y}][542,{y+514}]'})
+        ET.SubElement(region,'node',{'package':'co.hinge.app','text':'Shared answer','bounds':f'[28,{y+600}][542,{y+640}]'})
+        if extra: ET.SubElement(region,'node',{'package':'co.hinge.app','text':'Extra answer','bounds':f'[28,{y+778}][542,1081]'})
+        return root
+
+    def test_banner_resize_compares_shared_region_without_ignoring_real_changes(self):
+        from print_profile_prompts import top_content_matches
+        a,b=self.top(337),self.top(260,True)
+        self.assertTrue(top_content_matches(a,b,'Skip Example'))
+        b[-1][1].set('text','Changed answer')
+        self.assertFalse(top_content_matches(a,b,'Skip Example'))

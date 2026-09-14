@@ -116,7 +116,8 @@ def save_record(path, record):
 
 def likes_exhausted(root):
     """Recognize explicit English quota notices, never infer from a Rose count."""
-    notices = {"you're out of likes", "you are out of likes", "no more likes today",
+    notices = {"you're out of free likes for today", "you are out of free likes for today",
+               "you're out of likes", "you are out of likes", "no more likes today",
                "you've used all your likes for today", "you've reached your daily like limit",
                "you've reached your daily limit of likes"}
     values = {" ".join(n.get(key, '').replace('\u2019', "'").lower().strip(' .!').split())
@@ -141,6 +142,25 @@ def outcome(root, label):
     return "uncertain_no_confirmation"
 
 
+def final_capture_stable(folder, metadata):
+    """Permit only the observed external clipboard toast, retaining raw evidence."""
+    if metadata['consistency']=='unchanged':
+        return True
+    if not metadata.get('state_unchanged'):
+        return False
+    def signature(filename):
+        root=ET.parse(Path(folder)/filename).getroot()
+        def visit(node):
+            if (node.tag=='android.widget.Toast'
+                    and node.get('package')=='com.android.settings'
+                    and node.get('text')=='com.genymotion.genyd.GenydServiceApp pasted from your clipboard'):
+                return None
+            return (node.tag,tuple(sorted(node.attrib.items())),
+                    tuple(value for child in node if (value:=visit(child)) is not None))
+        return visit(root)
+    return signature('hierarchy.xml')==signature('hierarchy_after.xml')
+
+
 def submit(driver, receipt_path, send=False, output_root="captures"):
     profile, target, candidate = load_prepared(receipt_path)
     ledger = Path(output_root) / "submissions"
@@ -152,7 +172,7 @@ def submit(driver, receipt_path, send=False, output_root="captures"):
     size = driver.get_window_size()
     selector, rect = send_control(root, target, size)
     before, metadata = capture_observation(driver, ledger, "co.hinge.app")
-    if metadata["consistency"] != "unchanged":
+    if not final_capture_stable(before, metadata):
         raise RuntimeError("Screen changed during the final check. Nothing sent.")
     record = {"schema_version": 1, "preparation": str(Path(receipt_path).resolve()),
               "profile_label": profile["profile_label"], "target": target,

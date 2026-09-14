@@ -8,6 +8,7 @@ No screenshots, LLM calls, likes, or messages are produced.
 """
 
 import argparse
+import re
 from dataclasses import dataclass
 import sys
 import time
@@ -55,6 +56,79 @@ def read_profile(driver, expected_label=None):
     return root, label
 
 
+def profile_content_signature(tree, label):
+    # Compare profile content, not collapsible filter/navigation controls.
+    # The English accessibility format is the same one used by extraction.
+    # Observed transient Hinge banner, not profile-authored content. Match
+    # the exact current-name sentence; do not discard arbitrary text nodes.
+    transient_banner = label.removeprefix("Skip ") + " shows thoughtful signals"
+    # The observed scheduling card is clipped at the viewport bottom. Its fixed
+    # labels can appear/disappear while the same profile remains on screen.
+    ignored=set()
+    for card in tree.iter():
+        if not any(c.get('text')=="Let’s get together" for c in card):
+            continue
+        if not any(c.get('text')=='Choose a time' for c in card.iter()):
+            continue
+        ignored.update(n for n in card.iter() if n.get('text') in
+                       {"Let’s get together", 'Choose a time', 'for', 'our first date'})
+    return tuple((n.get("text", ""), n.get("content-desc", "")) for n in tree.iter()
+                 if n not in ignored and n.get("package") == "co.hinge.app"
+                 and n.get("text", "") != transient_banner
+                 and (n.get("text")
+                      or n.get("content-desc", "").startswith(("Prompt: ", "Skip "))
+                      or n.get("content-desc", "").endswith("'s photo")))
+
+def top_content_matches(initial, final, label):
+    """Compare shared visible content when a collapsing banner resizes the list."""
+    if profile_content_signature(initial, label)==profile_content_signature(final, label):
+        return True
+    import copy
+    def rect(node):
+        nums=re.findall(r'-?\d+', node.get('bounds',''))
+        return tuple(map(int,nums)) if len(nums)==4 else None
+    def region(root):
+        nodes=[n for n in root.iter() if n.get('scrollable')=='true'
+               and n.get('class')=='android.view.View' and rect(n)]
+        return nodes[0] if len(nodes)==1 else None
+    first, last=region(initial),region(final)
+    if first is None or last is None: return False
+    a,b=rect(first),rect(last)
+    if a[0]!=b[0] or a[2:]!=b[2:]: return False
+    # Require the same fully exposed first photo and the exact list translation.
+    def photo(node):
+        return next((n for n in node.iter() if n.get('content-desc','').endswith("'s photo") and rect(n)),None)
+    pa,pb=photo(first),photo(last)
+    if pa is None or pb is None or pa.get('content-desc')!=pb.get('content-desc'): return False
+    ra,rb=rect(pa),rect(pb)
+    if (ra[0],ra[2],ra[3]-ra[1])!=(rb[0],rb[2],rb[3]-rb[1]): return False
+    if ra[1]-a[1]!=rb[1]-b[1]: return False
+    height=min(a[3]-a[1],b[3]-b[1])
+    def shared(root):
+        root=copy.deepcopy(root)
+        content=region(root); area=rect(content)
+        for n in content.iter():
+            box=rect(n)
+            if box and box[1]>=area[1]+height:
+                n.attrib.pop('text',None)
+                n.attrib.pop('content-desc',None)
+        return profile_content_signature(root,label)
+    return shared(initial)==shared(final)
+
+
+def scroll_fingerprint(root):
+    """Track geometry/content without counting an autoplay timer as scrolling."""
+    rows=[]
+    for node in root.iter():
+        if node.get('package')!='co.hinge.app':
+            continue
+        values=[node.get(key,'') for key in ('class','text','content-desc','bounds')]
+        if re.fullmatch(r'Elapsed time: [0-9]+ seconds?', values[2]):
+            values[2]='Elapsed time: <timer>'
+        rows.append(tuple(values))
+    return tuple(rows)
+
+
 def collect_prompts(driver, max_scrolls=30, visible_only=False, on_observation=None,
                     verify_return=False):
     root, label = read_profile(driver)
@@ -78,17 +152,13 @@ def collect_prompts(driver, max_scrolls=30, visible_only=False, on_observation=N
         current, _ = read_profile(driver, label)
         # Hinge's Compose UI reported false scroll boundaries in live testing.
         # Compare app content/bounds instead; ignore system clock and window IDs.
-        def fingerprint(root):
-            return tuple(tuple(n.get(key, "") for key in
-                               ("class", "text", "content-desc", "bounds"))
-                         for n in root.iter() if n.get("package") == "co.hinge.app")
-        moved = fingerprint(previous) != fingerprint(current)
+        moved = scroll_fingerprint(previous) != scroll_fingerprint(current)
         if not moved:
             # Confirm a suspected boundary by observing again, not by issuing
             # another futile swipe against the end of the list.
             time.sleep(.3)
             settled, _ = read_profile(driver, label)
-            return settled, fingerprint(current) != fingerprint(settled)
+            return settled, scroll_fingerprint(current) != scroll_fingerprint(settled)
         return current, True
 
     # Start at the top so output follows profile order, regardless of initial position.
@@ -102,19 +172,7 @@ def collect_prompts(driver, max_scrolls=30, visible_only=False, on_observation=N
         raise RuntimeError("Scroll limit reached before profile top; results incomplete.")
 
     prompts = list(extract_prompts(root))
-    def content_signature(tree):
-        # Compare profile content, not collapsible filter/navigation controls.
-        # The English accessibility format is the same one used by extraction.
-        # Observed transient Hinge banner, not profile-authored content. Match
-        # the exact current-name sentence; do not discard arbitrary text nodes.
-        transient_banner = label.removeprefix("Skip ") + " shows thoughtful signals"
-        return tuple((n.get("text", ""), n.get("content-desc", "")) for n in tree.iter()
-                     if n.get("package") == "co.hinge.app"
-                     and n.get("text", "") != transient_banner
-                     and (n.get("text")
-                          or n.get("content-desc", "").startswith(("Prompt: ", "Skip "))
-                          or n.get("content-desc", "").endswith("'s photo")))
-    initial_signature = content_signature(root)
+    initial_top = root
     if on_observation:
         on_observation(root)
     unchanged = 0
@@ -136,7 +194,7 @@ def collect_prompts(driver, max_scrolls=30, visible_only=False, on_observation=N
                     if stationary >= 1:
                         if on_observation:
                             on_observation(top)
-                        if content_signature(top) != initial_signature:
+                        if not top_content_matches(initial_top, top, label):
                             raise RuntimeError("Profile top content changed; scan identity is uncertain.")
                         break
                 else:

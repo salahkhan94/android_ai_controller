@@ -521,3 +521,35 @@ its bounds, so the container is not a send target. Read-only evidence: captures/
 23 reply tests and 65 profile tests pass. No draft sent during diagnosis. Restart
 the bot to load the fix; inspect and clear any leftover unsent draft before Begin
 and a new candidate approval. Actual send confirmation remains to be verified.
+
+PROFILE QUOTA DIAGNOSIS (2026-09-12)
+- Monica submission efbacb7b9683a135056a0681bb1d8b952330c813bb9b4e359467577464d56292
+  was originally recorded uncertain_no_confirmation. Its after-capture
+  captures/submissions/20260912T205918_295483Z_6cf15d0f/hierarchy.xml explicitly
+  displays "You're out of free likes for today". Added that observed wording to
+  likes_exhausted; it now classifies the saved screen correctly. 66 tests pass.
+- Original submission ledger retained; no resend or automatic clearing authorized
+  by this diagnosis. Quota screen does not prove remote delivery of the comment.
+- Following scan profile_e39ac0ecc51b4654a6df134a8e4214d4 gained text
+  "Let’s get together" between first/last top observations, triggering continuity
+  protection. That check remains intact; no arbitrary text exclusion added.
+- Later Monica run was blocked by the existing send attempt, as intended.
+
+PROFILE CONTINUITY FIX (2026-09-12)
+- Leah scan profile_345a5084ee744014b4f1c238ec078386 failed because the clipped
+  scheduling card exposed fixed labels "for" and "our first date" on returning
+  to the top. New profile_content_signature excludes fixed scheduling labels only
+  inside a card recognized by its direct "Let’s get together" label and descendant
+  "Choose a time" label. Other profile text and prompt/identity checks remain.
+- Verified first/last actual Leah XML now match; 68 pipeline tests pass, including
+  clipping and changed prompt checks. No live like sent during this fix.
+
+FINAL CHECK CLIPBOARD TOAST FIX (2026-09-13)
+- Kyra run_0f31d3bec6d6451486877b0495887553 stopped before a send claim.
+  Captures/submissions/20260914T023201_471068Z_b4290f1a differed only by the
+  com.android.settings Toast saying GenydServiceApp pasted from clipboard.
+- final_capture_stable permits this exact external toast only when app/activity/
+  window state is unchanged and all remaining XML structure/attributes match.
+  Raw observation consistency stays unchanged in meaning; evidence is preserved.
+- Actual saved capture passes; 71 pipeline tests pass. No Kyra attempt ledger
+  entry exists for this target. No like sent during diagnosis.

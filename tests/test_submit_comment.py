@@ -106,3 +106,22 @@ class SubmitTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'already recorded'):
                 submit(driver, 'preparation.json', send=True, output_root=tmp)
             self.assertEqual(driver.execute_script.call_count, 1)
+
+class ClipboardToastTests(unittest.TestCase):
+    def test_clipboard_toast_only_is_allowed_but_composer_changes_are_not(self):
+        from submit_comment import final_capture_stable
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp)
+            original='<hierarchy><node text="approved comment"/></hierarchy>'
+            after='<hierarchy><node text="approved comment"/><android.widget.Toast package="com.android.settings" text="com.genymotion.genyd.GenydServiceApp pasted from your clipboard"/></hierarchy>'
+            (folder/'hierarchy.xml').write_text(original)
+            (folder/'hierarchy_after.xml').write_text(after)
+            metadata={'consistency':'changed','state_unchanged':True}
+            self.assertTrue(final_capture_stable(folder,metadata))
+            metadata['state_unchanged']=False
+            self.assertFalse(final_capture_stable(folder,metadata))
+            metadata['state_unchanged']=True
+            (folder/'hierarchy_after.xml').write_text(after.replace('approved comment','different comment'))
+            self.assertFalse(final_capture_stable(folder,metadata))
+            (folder/'hierarchy_after.xml').write_text(after.replace('com.android.settings','co.hinge.app'))
+            self.assertFalse(final_capture_stable(folder,metadata))
