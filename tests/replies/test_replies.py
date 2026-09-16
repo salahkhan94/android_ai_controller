@@ -90,7 +90,7 @@ class SendGuardTests(unittest.TestCase):
         from unittest.mock import patch
         from match_replies.hinge import Hinge, COMPOSER
         h=Hinge();match={'name':'Example','key':'x'}
-        expected={'fingerprint':'old'};h.read=Mock(return_value=expected)
+        expected={'fingerprint':'old','messages':[{'sender':'match','text':'Hello'}]};h.read=Mock(return_value=expected)
         root=ET.fromstring(f'''<hierarchy><node text="Example" bounds="[200,40][330,80]"/>
         <node resource-id="{COMPOSER}" text="Draft?" bounds="[17,1084][481,1147]"/>
         <node resource-id="co.hinge.app:id/sendMessageButton" content-desc="Send message" clickable="true" enabled="true" bounds="[490,1080][550,1147]"/>
@@ -165,3 +165,14 @@ class SendControlTests(unittest.TestCase):
         for desc in ('Send','Record voice note'):
             root=ET.fromstring(f'<hierarchy><node content-desc="{desc}" enabled="true" clickable="true"/></hierarchy>')
             with self.assertRaises(RuntimeError): send_control(root)
+
+class VisibleTailTests(unittest.TestCase):
+    def test_composer_resize_and_dates_do_not_change_messages(self):
+        from match_replies.hinge import verified_visible_tail
+        a={'sender':'match','text':'Hi'};b={'sender':'me','text':'Hello'};c={'sender':'match','text':'New'}
+        self.assertTrue(verified_visible_tail([a,b,c],[{'sender':'system','text':'Today'},b,c]))
+        self.assertTrue(verified_visible_tail([a,b,c],[c]))
+        self.assertFalse(verified_visible_tail([a,b,c],[b,c,{'sender':'match','text':'Another'}]))
+        self.assertFalse(verified_visible_tail([a,b,c],[a]))
+        self.assertFalse(verified_visible_tail([a,b,c],[]))
+        self.assertFalse(verified_visible_tail([a,b,a],[a]))

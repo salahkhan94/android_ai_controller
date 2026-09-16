@@ -101,3 +101,47 @@ Transport reference: https://core.telegram.org/bots/api
 Telegram connection check: getMe successfully verified @sal_ai_helper_bot and
 getWebhookInfo confirmed no webhook. No messages sent by this check. Phone pairing
 and the Help round trip remain pending.
+
+
+## Persistent profile context (2026-09-15)
+
+The reply service now keeps a local `match_memory` table in the existing SQLite
+state database. Each record has a UUID, verified conversation history, captured
+profile text, screenshot/XML paths, visual descriptions, persistent user context,
+and submission outcomes. Unselected candidates never become conversation messages.
+Runtime command state still resets at startup; match memory does not.
+
+First selection reads the thread, resolves memory using name plus full stored
+conversation-prefix continuity (ignoring reaction metadata), and captures the
+matched Profile tab if no snapshot is cached. It saves screenshots and XML under
+`captures/match_profiles/`, then sends those screenshots to the configured OpenAI
+model for concise visual descriptions. Profile facts and visual observations are
+separate. Image context is observations, not inferred sensitive traits or identity.
+Image processing has API costs and can take several minutes for a long profile.
+No hosted API conversations or remote file uploads are required: image inputs use
+request data URLs, and original screenshot evidence remains local.
+
+Subsequent selections reread accessible chat history, reuse the cached profile and
+instructions, and send profile text/descriptions plus the full captured conversation
+to reply generation. The model does not inspect the original images on every reply.
+Capture time and coverage limitations accompany the context. History rereading is
+intentional: incremental UI scrolling is not assumed reliable enough to omit checks.
+Messages are stored as the latest verified full snapshot, not appended blindly.
+
+Send `Refresh profile` while a match is selected to recapture and reanalyze it,
+archive the previous profile in the record, and generate a fresh candidate set.
+Send `Add context` to add persistent instructions for that match. Refreshing or
+regenerating invalidates previous candidate approvals. There is no automatic profile
+change detection yet; use Refresh profile when appropriate.
+
+Limitations: continuity is UI-based, not a stable Hinge server ID. Duplicate names
+remain unsupported. An edited/deleted/shorter or conflicting history stops instead
+of guessing identity or merging records. Screenshots capture visible media, not
+original full-resolution files; videos/audio are flagged as limited still/text
+coverage. Capture or model failures stop generation rather than silently omitting
+profile context. Restart the Python service to load the new feature.
+
+Verified: 17 profile viewports captured live from the already-open Bethany profile,
+then returned to Chat; no messages sent. 27 reply tests and 71 profile tests pass.
+The image-model request is covered offline; no new live vision generation or send
+was performed as part of implementation. Full Telegram flow needs user testing.

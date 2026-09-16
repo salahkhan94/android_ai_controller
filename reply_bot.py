@@ -68,7 +68,11 @@ def main():
             store.reset_session()
             started = int(time.time())
             stopped = threading.Event()
-            controller = Controller(store, hinge, lambda h, c: generate(h, c, os.environ.get('OPENAI_MODEL', 'gpt-5.6-sol')))
+            from match_replies.memory import Memory
+            from match_replies.profile_context import capture, describe
+            model=os.environ.get('OPENAI_MODEL', 'gpt-5.6-sol')
+            controller = Controller(store, hinge, lambda h, c: generate(h, c, model),
+                                    Memory(store), lambda match: describe(capture(hinge, match), model))
             thread = threading.Thread(target=worker, args=(store, controller, lambda body: client.send(chat, body), stopped))
             thread.start()
             print(f"Telegram bot @{me['username']} running. Send Help or Begin on your phone. Ctrl+C stops.", flush=True)

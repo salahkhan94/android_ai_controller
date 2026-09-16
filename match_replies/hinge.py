@@ -15,6 +15,7 @@ from observation import capture_observation
 from prepare_comment import node_xpath
 from profile_items import bounds
 from .device import session, ROOT
+from .memory import is_relative_timestamp
 
 COMPOSER='co.hinge.app:id/messageComposition'
 SEND_BUTTON='co.hinge.app:id/sendMessageButton'
@@ -89,7 +90,7 @@ def messages(root,name):
     for node in root.iter():
         label=node.get('text','')
         rect=bounds(node.get('bounds'))
-        if rect and re.match(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), ',label):
+        if rect and (re.match(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), ',label) or is_relative_timestamp(label)):
             found.append((rect[1],{'sender':'system','text':label}))
         desc=node.get('content-desc','')
         if rect and 156 <= rect[1] < 1062 and not desc.startswith((' You: ', f' {name}: ')) and re.search(r'\b(photo|image|voice|audio|video|gif|sticker)\b', desc, re.I):
@@ -125,6 +126,17 @@ def merge(history,view):
     if not overlaps: raise RuntimeError('Conversation viewport overlap was lost; refusing incomplete history.')
     if len(overlaps)>1: raise RuntimeError('Repeated messages make viewport alignment ambiguous.')
     return history+view[overlaps[0]:]
+
+def verified_visible_tail(history, visible):
+    """Require a unique, exact trailing message sequence; ignore date separators."""
+    def actual(items):
+        return [m for m in items if m['sender'] in ('me','match')]
+    full,view=actual(history),actual(visible)
+    if not view or not full or view[-1]['sender']!='match': return False
+    if len(view)>len(full) or full[-len(view):]!=view: return False
+    # A repeated fragment elsewhere cannot safely establish the latest viewport.
+    return sum(full[i:i+len(view)]==view for i in range(len(full)-len(view)+1))==1
+
 
 class Hinge:
     def __init__(self,udid='127.0.0.1:6555',server='http://127.0.0.1:4723',max_scrolls=80):
@@ -194,7 +206,7 @@ class Hinge:
         opening=[]
         for n in top.iter():
             text=n.get('text','');rect=bounds(n.get('bounds'))
-            if text and rect and 156<=rect[1]<1062 and not re.match(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),',text) and text not in ('Sent','Double tap to like a message'):
+            if text and rect and 156<=rect[1]<1062 and not is_relative_timestamp(text) and not re.match(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),',text) and text not in ('Sent','Double tap to like a message'):
                 opening.append({'sender':'opening_context','text':text})
         if not opening: raise RuntimeError('Opening conversation context is not exposed; full history cannot be verified.')
         history=messages(top,match['name'])
@@ -207,7 +219,7 @@ class Hinge:
             history=merge(history,view)
         else: raise RuntimeError('Latest conversation boundary was not reached.')
         if not history: raise RuntimeError('No labelled messages found.')
-        if history[-1]['sender']!='match': raise RuntimeError('The latest message is already yours. No new incoming message to reply to.')
+        if next((m['sender'] for m in reversed(history) if m['sender'] in ('me','match')),None)!='match': raise RuntimeError('The latest message is already yours. No new incoming message to reply to.')
         all_messages=opening+history
         result={'messages':all_messages,'coverage':'ui_boundary_verified','fingerprint':fingerprint(all_messages)}
         folder,_=capture_observation(d,ROOT/'captures'/'matches','co.hinge.app')
@@ -237,7 +249,17 @@ class Hinge:
                 d.press_keycode(4)
                 time.sleep(.5)
                 root=root_for(d);header(root,match['name'])
-            if messages(root,match['name'])!=before: raise RuntimeError('Messages changed while composing. Nothing sent.')
+            after_composing=messages(root,match['name'])
+            if not (verified_visible_tail(current['messages'],before)
+                    and verified_visible_tail(current['messages'],after_composing)):
+                folder,_=capture_observation(d,ROOT/'captures'/'matches','co.hinge.app')
+                (folder/'composition_check.json').write_text(json.dumps(
+                    {'before':before,'after':after_composing},ensure_ascii=False,indent=2))
+                raise RuntimeError(f'Conversation tail changed or could not be verified while composing. Draft left unsent. Evidence: {folder}')
+            editors=[n for n in root.iter() if n.get('resource-id')==COMPOSER]
+            if len(editors)!=1 or editors[0].get('text')!=text:
+                raise RuntimeError('Draft changed after keyboard dismissal. Nothing sent.')
+            before=after_composing
             try:
                 control=send_control(root)
             except RuntimeError:

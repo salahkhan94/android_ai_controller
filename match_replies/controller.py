@@ -4,18 +4,35 @@ import json
 import re
 import uuid
 
-HELP='Begin: list Your turn matches. Choose a name/number. Add context: revise replies. Reply with 1/2/3 to the candidate message, or use CODE 3. Cancel ends selection. Status shows state.'
+HELP='Begin: list Your turn matches. Choose a name/number. Add context: revise replies. Reply with 1/2/3 to the candidate message, or use CODE 3. Cancel ends selection. Status shows state. Refresh profile: recapture the selected match. Add context instructions persist across runs.'
 
 class Controller:
-    def __init__(self, store, backend, generate):
+    def __init__(self, store, backend, generate, memory=None, profile_loader=None):
         self.store,self.backend,self.generate=store,backend,generate
+        self.memory,self.profile_loader=memory,profile_loader
     def choices(self, state):
-        state['replies']=self.generate(state['history'],state['context'])
+        history=dict(state['history'])
+        if self.memory:
+            record=self.memory.sync(state['match'],history)
+            if state.get('memory_id') and record['id']!=state['memory_id']:
+                raise RuntimeError('Persistent match identity changed.')
+            state['memory_id']=record['id']
+            if not record['profile']:
+                record['profile']=self.profile_loader(state['match'])
+                self.memory.save(record)
+            record['context']=state['context']
+            self.memory.save(record)
+            history['profile_context']=record['profile']
+        state['replies']=self.generate(history,state['context'])
         state['revision']=uuid.uuid4().hex[:10]
         state['mode']='reply'
         name=state['match']['name']
-        latest=next((m['text'] for m in reversed(state['history']['messages']) if m['sender']=='match'),'')
-        body=f"{name}\nLatest incoming: {latest}\n\n"+'\n\n'.join(f'{i}. {r}' for i,r in enumerate(state['replies'],1))
+        recent=[m for m in state['history']['messages'] if m['sender'] in ('me','match')][-3:]
+        transcript='\n\n'.join(f"{'You' if m['sender']=='me' else name}: {m['text']}" for m in recent)
+        heading=f"Last {len(recent)} message{'s' if len(recent)!=1 else ''} (oldest first):"
+        if not recent:
+            heading='No conversation messages available.'
+        body=f"{name}\n{heading}\n{transcript}\n\n"+'\n\n'.join(f'{i}. {r}' for i,r in enumerate(state['replies'],1))
         body+=f"\n\nReply to THIS message with 1, 2, or 3; or send {state['revision']} 3 (replace 3 with your choice). Add context to revise."
         return state,[body]
     def handle(self, event):
@@ -33,7 +50,21 @@ class Controller:
             if text.isdecimal() and 1<=int(text)<=len(matches): options=[matches[int(text)-1]]
             if len(options)!=1: return s,['Choose a unique name or the list number.']
             history=self.backend.history(options[0])
-            s.update(match=options[0],history=history,context=[])
+            context=[]
+            if self.memory:
+                record=self.memory.sync(options[0],history)
+                context=record['context']
+                s['memory_id']=record['id']
+            s.update(match=options[0],history=history,context=context)
+            return self.choices(s)
+        if command=='refresh profile' and self.memory and s.get('match'):
+            history=self.backend.history(s['match'])
+            record=self.memory.sync(s['match'],history)
+            refreshed=self.profile_loader(s['match'])
+            if record['profile']: record.setdefault('previous_profiles',[]).append(record['profile'])
+            record['profile']=refreshed
+            self.memory.save(record)
+            s['history']=history
             return self.choices(s)
         if s['mode']=='context':
             if len(text)>4000: return s,['Please limit extra context to 4000 characters.']
@@ -55,6 +86,7 @@ class Controller:
             if event.get('revision')!=s['revision'] or not self.store.displayed(s['revision'],event.get('reply_to','')):
                 return s,['That choice refers to an old or undispatched candidate set. Use the current message.']
             current=self.backend.history(s['match'])
+            if self.memory: self.memory.sync(s['match'],current)
             if current['fingerprint']!=s['history']['fingerprint']:
                 s['history']=current
                 state,messages=self.choices(s)
@@ -63,6 +95,10 @@ class Controller:
             reply=s['replies'][int(choice)-1]
             status=self.backend.send(s['match'],current,reply,lambda: self.store.claim_send(key,{'match':s['match'],'reply':reply}))
             self.store.send_result(key,status)
+            if self.memory:
+                record=self.memory.load(s['memory_id'])
+                record['submissions'].append({'reply':reply,'status':status,'history_fingerprint':current['fingerprint']})
+                self.memory.save(record)
             if status=='sent':
                 return {'mode':'idle'},[f"Reply {choice} sent to {s['match']['name']}. Send Begin to refresh Your turn."]
             return {'mode':'idle'},['Send outcome is uncertain. I will not resend automatically. Check Hinge before continuing.']

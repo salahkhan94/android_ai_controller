@@ -1,3 +1,18 @@
+LATEST: PERSISTENT MATCH PROFILE CONTEXT (2026-09-15)
+- New match_replies/memory.py and profile_context.py; enabled in reply_bot.py serve.
+- SQLite match_memory survives restarts separately from transient controller state.
+  Reconcile same-name records by full previous conversation prefix; never preview
+  hash alone. Mismatches/shortened histories stop. No server-unique identity assumed.
+- First selection captures matched Profile tab screenshots/XML, exposed text and
+  OpenAI visual descriptions. Subsequent runs use cached profile+full chat+durable
+  Add context. Refresh profile archives/replaces snapshot and regenerates choices.
+- Original images retained locally as viewport screenshots; video/audio limited to
+  still frames/exposed text. No hosted API thread or automatic refresh implemented.
+- Actual sent outcomes stored separately; candidate text is not actual chat history.
+- 27 reply and 71 pipeline tests pass. Live capture of Bethany:17 viewports; returned
+  to Chat. No live image-model call or Hinge send. run.py unchanged.
+- See MATCH_REPLY_SETUP.md and MATCH_REPLIES_PLAN.md for workflow/limitations.
+
 Android AI Controller — project context
 
 CURRENT MATCH REPLY SERVICE: TELEGRAM (supersedes previous provider setup)
