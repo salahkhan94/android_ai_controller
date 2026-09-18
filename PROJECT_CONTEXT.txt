@@ -568,3 +568,15 @@ FINAL CHECK CLIPBOARD TOAST FIX (2026-09-13)
   Raw observation consistency stays unchanged in meaning; evidence is preserved.
 - Actual saved capture passes; 71 pipeline tests pass. No Kyra attempt ledger
   entry exists for this target. No like sent during diagnosis.
+
+MATCH HISTORY/SEND VERIFICATION (2026-09-17)
+- merge now aligns speaker-labelled messages rather than date separator nodes;
+  retains date context in accumulated results. True gaps and ambiguous repeated
+  sequences still stop. History forward swipes reduced from .4 to .2 for overlap.
+- Send confirmation uses exact newly appended outgoing text with a prior-message
+  overlap and cleared composer. Allows a subsequent incoming reply in same view.
+  No-overlap or missing-bubble outcomes remain uncertain; never automatically retry.
+- New overlap_check.json/send_check.json captures help diagnose failures. Previous
+  Rosie uncertain attempt has not been resent or relabelled as successful.
+- 33 reply tests pass. No live send performed; original uncertain send cause cannot
+  be proved from the old captures because post-click failure evidence was missing.

@@ -48,10 +48,10 @@ def tap(driver, root, node):
     driver.execute_script('mobile: clickGesture',{'elementId':elements[0].id})
     time.sleep(.4)
 
-def swipe(driver,direction):
+def swipe(driver,direction,percent=.4):
     size=driver.get_window_size()
     driver.execute_script('mobile: swipeGesture',{'left':int(size['width']*.25),'top':int(size['height']*.19),
-        'width':int(size['width']*.5),'height':int(size['height']*.55),'direction':direction,'percent':.4,'speed':400})
+        'width':int(size['width']*.5),'height':int(size['height']*.55),'direction':direction,'percent':percent,'speed':400})
     time.sleep(.3)
 
 def geometry(root):
@@ -120,12 +120,27 @@ def messages(root,name):
     return [m for _,m in sorted(found,key=lambda x:x[0])]
 
 def merge(history,view):
+    """Align actual messages; date separators can appear/disappear between views."""
     if not history: return list(view)
     if not view: return history
-    overlaps=[n for n in range(1,min(len(history),len(view))+1) if history[-n:]==view[:n]]
+    old=[m for m in history if m['sender'] in ('me','match')]
+    positions=[i for i,m in enumerate(view) if m['sender'] in ('me','match')]
+    new=[view[i] for i in positions]
+    if not old: return history+view
+    if not new: return history
+    overlaps=[n for n in range(1,min(len(old),len(new))+1) if old[-n:]==new[:n]]
     if not overlaps: raise RuntimeError('Conversation viewport overlap was lost; refusing incomplete history.')
     if len(overlaps)>1: raise RuntimeError('Repeated messages make viewport alignment ambiguous.')
-    return history+view[overlaps[0]:]
+    return history+view[positions[overlaps[0]-1]+1:]
+
+
+def sent_reply_visible(before,after,text):
+    old=[m for m in before if m['sender'] in ('me','match')]
+    new=[m for m in after if m['sender'] in ('me','match')]
+    try: combined=merge(old,new)
+    except RuntimeError: return False
+    return len(combined)>len(old) and combined[len(old)]=={'sender':'me','text':text}
+
 
 def verified_visible_tail(history, visible):
     """Require a unique, exact trailing message sequence; ignore date separators."""
@@ -213,10 +228,15 @@ class Hinge:
         for step in range(self.max_scrolls):
             if step % 10 == 0: logging.info('Merging history: scroll %s',step)
             root=root_for(d);before=geometry(root)
-            swipe(d,'up');current=root_for(d);header(current,match['name'])
+            swipe(d,'up',percent=.2);current=root_for(d);header(current,match['name'])
             view=messages(current,match['name'])
             if geometry(current)==before: break
-            history=merge(history,view)
+            try:
+                history=merge(history,view)
+            except RuntimeError:
+                folder,_=capture_observation(d,ROOT/'captures'/'matches','co.hinge.app')
+                (folder/'overlap_check.json').write_text(json.dumps({'history':history,'view':view},ensure_ascii=False,indent=2))
+                raise
         else: raise RuntimeError('Latest conversation boundary was not reached.')
         if not history: raise RuntimeError('No labelled messages found.')
         if next((m['sender'] for m in reversed(history) if m['sender'] in ('me','match')),None)!='match': raise RuntimeError('The latest message is already yours. No new incoming message to reply to.')
@@ -272,13 +292,19 @@ class Hinge:
                 for _ in range(10):
                     root=root_for(d);header(root,match['name']);after=messages(root,match['name'])
                     expected_new={'sender':'me','text':text}
-                    try: appended=merge(before,after)==before+[expected_new]
-                    except RuntimeError: appended=False
+                    appended=sent_reply_visible(before,after,text)
                     editors=[n for n in root.iter() if n.get('resource-id')==COMPOSER]
                     cleared=len(editors)==1 and editors[0].get('text','') in ('','Send a message')
                     if appended and cleared:
                         capture_observation(d,ROOT/'captures'/'matches','co.hinge.app')
                         return 'sent'
                     time.sleep(.5)
-            except Exception: return 'uncertain'
+            except Exception as exc:
+                logging.warning('Send verification stopped (%s); no retry',type(exc).__name__)
+            try:
+                folder,_=capture_observation(d,ROOT/'captures'/'matches','co.hinge.app')
+                (folder/'send_check.json').write_text(json.dumps({'before':before,'expected_reply':text},ensure_ascii=False,indent=2))
+                logging.warning('Uncertain send evidence: %s',folder)
+            except Exception:
+                logging.warning('Could not capture uncertain send evidence')
             return 'uncertain'

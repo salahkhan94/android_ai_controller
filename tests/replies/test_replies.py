@@ -176,3 +176,16 @@ class VisibleTailTests(unittest.TestCase):
         self.assertFalse(verified_visible_tail([a,b,c],[a]))
         self.assertFalse(verified_visible_tail([a,b,c],[]))
         self.assertFalse(verified_visible_tail([a,b,a],[a]))
+
+class DateOverlapTests(unittest.TestCase):
+    def test_dates_do_not_break_overlap_or_send_confirmation(self):
+        from match_replies.hinge import sent_reply_visible
+        a={'sender':'match','text':'Hi'};b={'sender':'me','text':'Hello?'}
+        before=[{'sender':'system','text':'Yesterday'},a]
+        after=[a,{'sender':'system','text':'Today'},b]
+        self.assertEqual([m for m in merge(before,after) if m['sender']!='system'],[a,b])
+        self.assertTrue(sent_reply_visible(before,after,'Hello?'))
+        self.assertFalse(sent_reply_visible(before,[a],'Hello?'))
+        self.assertFalse(sent_reply_visible(before,[b],'Hello?'))
+        self.assertFalse(sent_reply_visible(before,[a,{'sender':'me','text':'Different'}],'Hello?'))
+        self.assertTrue(sent_reply_visible(before,after+[{'sender':'match','text':'New response'}],'Hello?'))
