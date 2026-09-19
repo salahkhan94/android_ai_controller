@@ -97,3 +97,18 @@ class RelativeTimestampTests(MemoryTests):
     def test_real_timestamp_message_is_preserved(self):
         from match_replies.memory import core
         self.assertEqual(core([{'sender':'match','text':'Today 1:53AM'}]),[{'sender':'match','text':'Today 1:53AM'}])
+
+class NotificationPanelTests(unittest.TestCase):
+    def test_complete_legacy_panel_is_ignored_only_in_opening_context(self):
+        from match_replies.memory import core
+        labels=['Get notifications from Bridget only',
+                'Timing is everything. This will not turn on notifications for other matches.',
+                'Enable for Bridget']
+        conversation=[{'sender':'opening_context','text':'Real prompt'},
+                      {'sender':'match','text':'Hello'}]
+        panel=[{'sender':'opening_context','text':text} for text in labels]
+        self.assertEqual(core(conversation[:1]+panel+conversation[1:],'Bridget'),conversation)
+        self.assertNotEqual(core(conversation+panel,'Other'),conversation)
+        self.assertNotEqual(core(conversation+panel[:1],'Bridget'),conversation)
+        real=[{'sender':'match','text':text} for text in labels]
+        self.assertEqual(core(real,'Bridget'),real)

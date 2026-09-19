@@ -15,7 +15,7 @@ from observation import capture_observation
 from prepare_comment import node_xpath
 from profile_items import bounds
 from .device import session, ROOT
-from .memory import is_relative_timestamp
+from .memory import is_relative_timestamp, notification_panel_texts
 
 COMPOSER='co.hinge.app:id/messageComposition'
 SEND_BUTTON='co.hinge.app:id/sendMessageButton'
@@ -219,9 +219,10 @@ class Hinge:
         # Preserve all opening-card text as labelled context, never infer who sent
         # a message that has no speaker label. UI boundary is not server completeness.
         opening=[]
+        ignored_panel=notification_panel_texts([n.get('text','') for n in top.iter()],match['name'])
         for n in top.iter():
             text=n.get('text','');rect=bounds(n.get('bounds'))
-            if text and rect and 156<=rect[1]<1062 and not is_relative_timestamp(text) and not re.match(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),',text) and text not in ('Sent','Double tap to like a message'):
+            if text and text not in ignored_panel and rect and 156<=rect[1]<1062 and not is_relative_timestamp(text) and not re.match(r'^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),',text) and text not in ('Sent','Double tap to like a message'):
                 opening.append({'sender':'opening_context','text':text})
         if not opening: raise RuntimeError('Opening conversation context is not exposed; full history cannot be verified.')
         history=messages(top,match['name'])

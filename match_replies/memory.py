@@ -9,10 +9,21 @@ def is_relative_timestamp(text):
     return bool(re.fullmatch(r'(?:Today|Yesterday)(?:\s+(?:at\s+)?\d{1,2}:\d{2}\s*(?:AM|PM)?)?', text.strip(), re.I))
 
 
-def core(messages):
+def notification_panel_texts(texts, name):
+    """Recognize the complete observed notification opt-in panel, not arbitrary prose."""
+    if not name: return set()
+    labels={f'Get notifications from {name} only',
+            'Timing is everything. This will not turn on notifications for other matches.',
+            f'Enable for {name}'}
+    return labels if labels.issubset(set(texts)) else set()
+
+
+def core(messages, name=None):
+    ignored=notification_panel_texts(
+        [m['text'] for m in messages if m['sender']=='opening_context'], name)
     return [{'sender':m['sender'],'text':m['text']} for m in messages
             if m['sender'] in ('me','match','opening_context')
-            and not (m['sender']=='opening_context' and is_relative_timestamp(m['text']))]
+            and not (m['sender']=='opening_context' and (is_relative_timestamp(m['text']) or m['text'] in ignored))]
 
 
 class Memory:
@@ -36,12 +47,12 @@ class Memory:
     def sync(self, match, history):
         if history.get('coverage')!='ui_boundary_verified':
             raise RuntimeError('Cannot attach memory to incomplete history.')
-        current=core(history['messages'])
+        current=core(history['messages'],match['name'])
         if not any(m['sender']=='opening_context' for m in current) or not any(m['sender']=='match' for m in current):
             raise RuntimeError('Insufficient conversation evidence for persistent identity.')
         with self.store.db() as db:
             rows=[json.loads(r[0]) for r in db.execute('SELECT data FROM match_memory WHERE name=?',(match['name'].casefold(),))]
-        compatible=[r for r in rows if current[:len(core(r['history']['messages']))]==core(r['history']['messages'])]
+        compatible=[r for r in rows if current[:len(core(r['history']['messages'],match['name']))]==core(r['history']['messages'],match['name'])]
         if rows and len(compatible)!=1:
             raise RuntimeError('Stored match identity/history does not uniquely match this thread. Memory was not merged.')
         record=compatible[0] if compatible else {'id':uuid.uuid4().hex,'name':match['name'],'context':[], 'profile':None,'submissions':[]}
