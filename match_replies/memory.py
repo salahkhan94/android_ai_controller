@@ -53,9 +53,22 @@ class Memory:
         with self.store.db() as db:
             rows=[json.loads(r[0]) for r in db.execute('SELECT data FROM match_memory WHERE name=?',(match['name'].casefold(),))]
         compatible=[r for r in rows if current[:len(core(r['history']['messages'],match['name']))]==core(r['history']['messages'],match['name'])]
-        if rows and len(compatible)!=1:
+        # A second same-name person needs distinct opening AND first incoming
+        # evidence, plus an observed duplicate-name list. Never fork a known row
+        # merely because its stored history no longer matches.
+        def anchor(items):
+            opening=[m['text'] for m in items if m['sender']=='opening_context']
+            first=next((m['text'] for m in items if m['sender']=='match'),None)
+            return opening,first
+        opening,first=anchor(current)
+        distinct=all((lambda old: old[0]!=opening and old[1]!=first)(anchor(core(r['history']['messages'],match['name']))) for r in rows)
+        known_row=any(match['key'] in r.get('row_keys',[]) for r in rows)
+        new_person=(not compatible and match.get('same_name_count',1)>1 and distinct and not known_row)
+        if rows and len(compatible)!=1 and not new_person:
             raise RuntimeError('Stored match identity/history does not uniquely match this thread. Memory was not merged.')
         record=compatible[0] if compatible else {'id':uuid.uuid4().hex,'name':match['name'],'context':[], 'profile':None,'submissions':[]}
+        keys=record.setdefault('row_keys',[])
+        if match['key'] not in keys: keys.append(match['key'])
         record['history']=history
         self.save(record)
         return record

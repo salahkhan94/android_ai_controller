@@ -32,7 +32,7 @@ class Controller:
         heading=f"Last {len(recent)} message{'s' if len(recent)!=1 else ''} (oldest first):"
         if not recent:
             heading='No conversation messages available.'
-        body=f"{name}\n{heading}\n{transcript}\n\n"+'\n\n'.join(f'{i}. {r}' for i,r in enumerate(state['replies'],1))
+        body=f"{name}\nSelected preview: {state['match'].get('preview', '')}\n{heading}\n{transcript}\n\n"+'\n\n'.join(f'{i}. {r}' for i,r in enumerate(state['replies'],1))
         body+=f"\n\nReply to THIS message with 1, 2, or 3; or send {state['revision']} 3 (replace 3 with your choice). Add context to revise."
         return state,[body]
     def handle(self, event):
@@ -43,11 +43,13 @@ class Controller:
         if command=='begin':
             matches=self.backend.list_matches()
             s={'mode':'match','matches':matches}
-            return s,[('Your turn:\n'+'\n'.join(f"{i}. {m['name']}" for i,m in enumerate(matches,1))+'\nWhich match would you like to reply to?') if matches else 'No matches in Your turn.']
+            return s,[('Your turn:\n'+'\n'.join(f"{i}. {m['name']} — {m.get('preview', '')}" for i,m in enumerate(matches,1))+'\nWhich match would you like to reply to?') if matches else 'No matches in Your turn.']
         if s['mode']=='match':
             matches=s['matches']
             options=[m for m in matches if m['name'].casefold()==command]
             if text.isdecimal() and 1<=int(text)<=len(matches): options=[matches[int(text)-1]]
+            if len(options)>1:
+                return s,['More than one match has that name. Choose the list number:\n'+'\n'.join(f"{i}. {m['name']} — {m.get('preview','')}" for i,m in enumerate(matches,1) if m in options)]
             if len(options)!=1: return s,['Choose a unique name or the list number.']
             history=self.backend.history(options[0])
             context=[]

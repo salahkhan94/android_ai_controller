@@ -80,8 +80,8 @@ def match_rows(root, expected_count=None):
         if not texts: continue
         name=texts[0]; preview='\n'.join(texts[1:])
         result.append({'name':name,'preview':preview,'key':fingerprint([name,preview]),'_node':n})
-    if len({m['name'].casefold() for m in result})!=len(result):
-        raise RuntimeError('Duplicate match names need additional UI identity evidence; no thread selected.')
+    if len({m['key'] for m in result})!=len(result):
+        raise RuntimeError('Two matches have identical names and previews; additional profile identification is required. No thread selected.')
     return result
 
 def messages(root,name):
@@ -185,8 +185,8 @@ class Hinge:
             if geometry(root)==before: raise RuntimeError('Not all Your turn rows were accessible.')
         else: raise RuntimeError('Match list scroll limit reached.')
         result=list(records.values())
-        if len({m['name'].casefold() for m in result})!=len(result):
-            raise RuntimeError('Duplicate match names are not yet safely distinguishable.')
+        for m in result:
+            m['same_name_count']=sum(other['name'].casefold()==m['name'].casefold() for other in result)
         return result
     def list_matches(self):
         with self.connect() as d:

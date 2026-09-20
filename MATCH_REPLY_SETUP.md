@@ -164,3 +164,18 @@ Verified: 17 profile viewports captured live from the already-open Bethany profi
 then returned to Chat; no messages sent. 27 reply tests and 71 profile tests pass.
 The image-model request is covered offline; no new live vision generation or send
 was performed as part of implementation. Full Telegram flow needs user testing.
+
+
+SAME-NAME MATCHES (2026-09-19; supersedes prior duplicate-name limitation)
+- Begin lists each match with its number, name and latest-message preview.
+  A duplicate name prompts numbered clarification; number selects the exact row.
+- Row resolution remains bound to the saved name+preview; changed previews require
+  Begin. Identical name+preview collisions stop rather than selecting arbitrarily.
+  Thumbnail-based disambiguation is not implemented.
+- Memory can create a second same-name record only when duplicate names were
+  observed and both opening context and first incoming message differ from existing
+  records. Known row keys with conflicting history stop. Continuing histories reuse
+  their original UUID, cached profile and instructions even after previews change.
+- Candidate display includes the selected preview. Fresh history verification and
+  the single-attempt send ledger remain in force. run.py unchanged.
+- Verified 39 reply tests and 71 pipeline tests. No live messages sent in this update.

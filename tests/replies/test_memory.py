@@ -112,3 +112,17 @@ class NotificationPanelTests(unittest.TestCase):
         self.assertNotEqual(core(conversation+panel[:1],'Bridget'),conversation)
         real=[{'sender':'match','text':text} for text in labels]
         self.assertEqual(core(real,'Bridget'),real)
+
+class SameNameMemoryTests(MemoryTests):
+    def test_distinct_same_name_threads_keep_separate_context(self):
+        first={**self.match,'same_name_count':2}
+        a=self.memory.sync(first,self.history)
+        a['context']=['First person'];self.memory.save(a)
+        second={**first,'key':'other-row'}
+        history={**self.history,'messages':[{'sender':'opening_context','text':'Different opening'}, {'sender':'match','text':'Different first message'}]}
+        b=self.memory.sync(second,history)
+        self.assertNotEqual(a['id'],b['id'])
+        self.assertEqual(b['context'],[])
+        updated=self.memory.sync({**first,'key':'new-preview'},self.history)
+        self.assertEqual(updated['context'],['First person'])
+        with self.assertRaises(RuntimeError): self.memory.sync(second,self.history | {'messages':[{'sender':'opening_context','text':'Changed again'},{'sender':'match','text':'Changed again'}]})

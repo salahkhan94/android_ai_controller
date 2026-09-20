@@ -189,3 +189,25 @@ class DateOverlapTests(unittest.TestCase):
         self.assertFalse(sent_reply_visible(before,[b],'Hello?'))
         self.assertFalse(sent_reply_visible(before,[a,{'sender':'me','text':'Different'}],'Hello?'))
         self.assertTrue(sent_reply_visible(before,after+[{'sender':'match','text':'New response'}],'Hello?'))
+
+class SameNameSelectionTests(unittest.TestCase):
+    setUp=ServiceTests.setUp
+    command=ServiceTests.command
+    def test_number_selects_correct_person_and_name_asks_for_clarification(self):
+        other={**self.match,'key':'other','preview':'Different preview'}
+        self.backend.list_matches.return_value=[self.match,other]
+        _,out=self.command('Begin')
+        self.assertIn('Different preview',out[0])
+        _,out=self.command('Example')
+        self.assertIn('More than one',out[0])
+        self.backend.history.assert_not_called()
+        self.command('2')
+        self.backend.history.assert_called_once_with(other)
+
+    def test_same_name_rows_with_distinct_previews_are_allowed(self):
+        root=ET.fromstring('''<hierarchy><node text="Your turn (2)" bounds="[0,200][300,230]"/>
+        <node clickable="true" long-clickable="true" bounds="[0,250][570,350]"><node text="Rosie"/><node text="Hello"/></node>
+        <node clickable="true" long-clickable="true" bounds="[0,400][570,500]"><node text="Rosie"/><node text="Dinner?"/></node></hierarchy>''')
+        self.assertEqual(len(match_rows(root)),2)
+        root[-1][-1].set('text','Hello')
+        with self.assertRaises(RuntimeError): match_rows(root)
