@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 import uuid
+from .memory import same_conversation
 
 HELP='Begin: list Your turn matches. Choose a name/number. Add context: revise replies. Reply with 1/2/3 to the candidate message, or use CODE 3. Cancel ends selection. Status shows state. Refresh profile: recapture the selected match. Add context instructions persist across runs.'
 
@@ -89,7 +90,7 @@ class Controller:
                 return s,['That choice refers to an old or undispatched candidate set. Use the current message.']
             current=self.backend.history(s['match'])
             if self.memory: self.memory.sync(s['match'],current)
-            if current['fingerprint']!=s['history']['fingerprint']:
+            if not same_conversation(current,s['history'],s['match']['name']):
                 s['history']=current
                 state,messages=self.choices(s)
                 return state,['The conversation changed. Choose again from these updated replies.']+messages

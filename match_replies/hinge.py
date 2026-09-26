@@ -15,7 +15,7 @@ from observation import capture_observation
 from prepare_comment import node_xpath
 from profile_items import bounds
 from .device import session, ROOT
-from .memory import is_relative_timestamp, notification_panel_texts
+from .memory import is_relative_timestamp, notification_panel_texts, same_conversation
 
 COMPOSER='co.hinge.app:id/messageComposition'
 SEND_BUTTON='co.hinge.app:id/sendMessageButton'
@@ -170,9 +170,16 @@ class Hinge:
     def rows(self,d):
         root=self.matches_page(d)
         for _ in range(self.max_scrolls):
+            # The visible section heading proves the start of Your turn is in
+            # view; screen-wide animation must not trigger more upward swipes.
+            if any(re.fullmatch(r'Your turn \(\d+\)',n.get('text',''))
+                   and bounds(n.get('bounds'))
+                   and 94<=bounds(n.get('bounds'))[1]<1081
+                   for n in root.iter()):
+                break
             before=geometry(root);swipe(d,'down');root=root_for(d)
             if geometry(root)==before: break
-        else: raise RuntimeError('Could not reach the top of Matches.')
+        else: raise RuntimeError('Could not reach the Your turn section within the scroll limit.')
         heads=[n.get('text') for n in root.iter() if re.fullmatch(r'Your turn \(\d+\)',n.get('text',''))]
         if len(heads)!=1: raise RuntimeError('Your turn heading not found.')
         count=int(re.search(r'\d+',heads[0]).group())
@@ -256,7 +263,7 @@ class Hinge:
     def send(self,match,expected,text,claim):
         with self.connect() as d:
             current=self.read(d,match)
-            if current['fingerprint']!=expected['fingerprint']: raise RuntimeError('Conversation changed before sending. Send Begin to refresh.')
+            if not same_conversation(current,expected,match['name']): raise RuntimeError('Conversation changed before sending. Send Begin to refresh.')
             before=messages(root_for(d),match['name'])
             fields=d.find_elements('id',COMPOSER)
             if len(fields)!=1: raise RuntimeError('Reply editor is not unique.')

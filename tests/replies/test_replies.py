@@ -211,3 +211,24 @@ class SameNameSelectionTests(unittest.TestCase):
         self.assertEqual(len(match_rows(root)),2)
         root[-1][-1].set('text','Hello')
         with self.assertRaises(RuntimeError): match_rows(root)
+
+class MatchListScrollTests(unittest.TestCase):
+    def test_visible_section_does_not_scroll_toward_top(self):
+        from unittest.mock import patch
+        from match_replies.hinge import Hinge
+        root=ET.fromstring('''<hierarchy><node text="Your turn (1)" bounds="[0,200][300,230]"/>
+        <node clickable="true" long-clickable="true" bounds="[0,250][570,350]"><node text="Example"/><node text="Hello"/></node></hierarchy>''')
+        h=Hinge();h.matches_page=Mock(return_value=root)
+        with patch('match_replies.hinge.swipe') as swipe:
+            self.assertEqual(h.rows(Mock())[0]['name'],'Example')
+            swipe.assert_not_called()
+
+    def test_stops_seeking_top_when_heading_appears(self):
+        from unittest.mock import patch
+        from match_replies.hinge import Hinge
+        initial=ET.fromstring('<hierarchy><node text="Hidden (2)" bounds="[0,200][300,230]"/></hierarchy>')
+        top=ET.fromstring('<hierarchy><node text="Your turn (0)" bounds="[0,200][300,230]"/></hierarchy>')
+        h=Hinge();h.matches_page=Mock(return_value=initial)
+        with patch('match_replies.hinge.root_for',return_value=top),patch('match_replies.hinge.swipe') as swipe:
+            self.assertEqual(h.rows(Mock()),[])
+            swipe.assert_called_once()

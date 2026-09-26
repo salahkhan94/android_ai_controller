@@ -126,3 +126,27 @@ class SameNameMemoryTests(MemoryTests):
         updated=self.memory.sync({**first,'key':'new-preview'},self.history)
         self.assertEqual(updated['context'],['First person'])
         with self.assertRaises(RuntimeError): self.memory.sync(second,self.history | {'messages':[{'sender':'opening_context','text':'Changed again'},{'sender':'match','text':'Changed again'}]})
+
+class ConversationComparisonTests(unittest.TestCase):
+    def test_duplicate_dates_are_not_new_messages(self):
+        from match_replies.memory import same_conversation
+        msg={'sender':'match','text':'Hello'}
+        date={'sender':'system','text':'Yesterday 3:10PM'}
+        self.assertTrue(same_conversation({'messages':[date,date,msg]}, {'messages':[date,msg]},'Rosie'))
+        self.assertFalse(same_conversation({'messages':[msg]}, {'messages':[msg,msg]},'Rosie'))
+        self.assertFalse(same_conversation({'messages':[msg]}, {'messages':[{'sender':'me','text':'Hello'}]},'Rosie'))
+        self.assertFalse(same_conversation({'messages':[msg]}, {'messages':[{'sender':'match','text':'Changed'}]},'Rosie'))
+
+class OpeningTitleTests(unittest.TestCase):
+    def test_newly_exposed_title_preserves_matching_thread(self):
+        from match_replies.memory import history_continues
+        old=[{'sender':'opening_context','text':'Prompt answer'},
+             {'sender':'opening_context','text':'Original comment'},
+             {'sender':'match','text':'Incoming'}]
+        new=[{'sender':'opening_context','text':'Prompt title'}]+old
+        self.assertTrue(history_continues(old,new))
+        self.assertFalse(history_continues(new,old))
+        changed=[dict(m) for m in new];changed[-1]['text']='Different incoming'
+        self.assertFalse(history_continues(old,changed))
+        changed=[dict(m) for m in new];changed[1]['text']='Different answer'
+        self.assertFalse(history_continues(old,changed))

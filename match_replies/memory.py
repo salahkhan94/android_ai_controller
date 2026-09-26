@@ -26,6 +26,25 @@ def core(messages, name=None):
             and not (m['sender']=='opening_context' and (is_relative_timestamp(m['text']) or m['text'] in ignored))]
 
 
+def same_conversation(first, second, name):
+    """Compare content, not changing/duplicated UI date separators."""
+    return core(first['messages'], name)==core(second['messages'], name)
+
+
+def history_continues(previous, current):
+    if current[:len(previous)]==previous:
+        return True
+    # A clipped opening card may initially omit its title. Permit only one
+    # newly exposed leading field with at least two unchanged opening anchors.
+    old_open=[m for m in previous if m['sender']=='opening_context']
+    new_open=[m for m in current if m['sender']=='opening_context']
+    old_chat=[m for m in previous if m['sender'] in ('me','match')]
+    new_chat=[m for m in current if m['sender'] in ('me','match')]
+    return (len(old_open)>=2 and len(new_open)==len(old_open)+1
+            and new_open[1:]==old_open and bool(old_chat)
+            and new_chat[:len(old_chat)]==old_chat)
+
+
 class Memory:
     def __init__(self, store):
         self.store=store
@@ -52,7 +71,7 @@ class Memory:
             raise RuntimeError('Insufficient conversation evidence for persistent identity.')
         with self.store.db() as db:
             rows=[json.loads(r[0]) for r in db.execute('SELECT data FROM match_memory WHERE name=?',(match['name'].casefold(),))]
-        compatible=[r for r in rows if current[:len(core(r['history']['messages'],match['name']))]==core(r['history']['messages'],match['name'])]
+        compatible=[r for r in rows if history_continues(core(r['history']['messages'],match['name']),current)]
         # A second same-name person needs distinct opening AND first incoming
         # evidence, plus an observed duplicate-name list. Never fork a known row
         # merely because its stored history no longer matches.

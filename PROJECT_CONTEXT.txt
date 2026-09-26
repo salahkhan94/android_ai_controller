@@ -595,3 +595,6 @@ SAME-NAME MATCHES (2026-09-19; supersedes prior duplicate-name limitation)
 - Candidate display includes the selected preview. Fresh history verification and
   the single-attempt send ledger remain in force. run.py unchanged.
 - Verified 39 reply tests and 71 pipeline tests. No live messages sent in this update.
+
+Alina Add context history reconciliation fix:
+The initial capture omitted the opening prompt title; the reread included it. Memory matching now permits one newly exposed leading opening-context field when at least two existing opening fields and the actual chat history remain unchanged (new messages may append). Conflicting or shortened histories remain blocked. Regression coverage: 43 reply tests pass. Restart reply_bot.py serve and repeat Begin / match selection / Add context. No live message was sent during verification.
